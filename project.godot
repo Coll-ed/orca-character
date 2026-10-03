@@ -1,0 +1,14 @@
+; Engine configuration file.
+; Godot 工程文件：本工程只为「把资源导出成 .pck」而存在。
+; 版本约束：游戏内置 MegaDot 4.5.1 —— 用更新版本 Godot 导出的 .pck 游戏不加载。
+
+config_version=5
+
+[application]
+
+config/name="OrcaCharacter"
+config/features=PackedStringArray("4.5", "C#")
+
+[dotnet]
+
+project/assembly_name="OrcaCharacter"

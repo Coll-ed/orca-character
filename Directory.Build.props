@@ -1,24 +1,22 @@
 <Project>
+    <!--
+      工程级常量（单一来源）。本机相关的绝对路径一律不放这里，
+      交给 Sts2PathDiscovery.props 自动发现（注册表 / Steam 安装位置），
+      或用 local.props（已 gitignore）覆盖。
+    -->
+    <PropertyGroup>
+        <!-- 模组在 mods\ 下的目录名。改这里即可换安装目录，csproj 只引用符号。 -->
+        <ModFolderName Condition="'$(ModFolderName)' == ''">奥卡角色-Orca</ModFolderName>
 
-  <!--
-    依赖路径的**唯一来源**（工程纪律 #1：路径不写死在 csproj 里，只引用符号）。
-    要换机器 / 换安装位置，只改这一个文件；也可用同名环境变量覆盖，例如：
-      $env:Sts2GameDir = "E:\Games\Slay the Spire 2"
-  -->
-  <PropertyGroup>
-    <Sts2GameDir Condition="'$(Sts2GameDir)' == ''">D:\Steam\steamapps\common\Slay the Spire 2</Sts2GameDir>
-    <Sts2DataDir Condition="'$(Sts2DataDir)' == ''">$(Sts2GameDir)\data_sts2_windows_x86_64</Sts2DataDir>
-    <!-- BaseLib 是**创意工坊** mod，不在本地 mods\ 目录 -->
-    <Sts2WorkshopDir Condition="'$(Sts2WorkshopDir)' == ''">D:\Steam\steamapps\workshop\content\2868840</Sts2WorkshopDir>
-    <BaseLibDll Condition="'$(BaseLibDll)' == ''">$(Sts2WorkshopDir)\3737335127\BaseLib\BaseLib.dll</BaseLibDll>
-  </PropertyGroup>
+        <!--
+          Godot 编辑器可执行文件：仅 `dotnet publish` 导出 .pck 时需要。
+          取值优先级：/p:GodotPath=... > local.props > 环境变量 GODOT_PATH。
+          版本约束：游戏内置 MegaDot 4.5.1；用更新版本导出的 .pck 游戏不加载。
+          故此处不提供任何默认绝对路径——没配就由 csproj 的 NeedGodotForPublish 明确报错。
+        -->
+        <GodotPath Condition="'$(GodotPath)' == ''">$(GODOT_PATH)</GodotPath>
+    </PropertyGroup>
 
-  <!-- 依赖程序集：csproj 只管引用符号，不写绝对路径 -->
-  <ItemGroup>
-    <Reference Include="sts2">       <HintPath>$(Sts2DataDir)\sts2.dll</HintPath>       <Private>false</Private></Reference>
-    <Reference Include="GodotSharp"> <HintPath>$(Sts2DataDir)\GodotSharp.dll</HintPath> <Private>false</Private></Reference>
-    <Reference Include="0Harmony">   <HintPath>$(Sts2DataDir)\0Harmony.dll</HintPath>   <Private>false</Private></Reference>
-    <Reference Include="BaseLib">    <HintPath>$(BaseLibDll)</HintPath>                 <Private>false</Private></Reference>
-  </ItemGroup>
-
+    <!-- 本机个人覆盖（不入库）。示例见 local.props.example -->
+    <Import Project="$(MSBuildThisFileDirectory)local.props" Condition="Exists('$(MSBuildThisFileDirectory)local.props')" />
 </Project>

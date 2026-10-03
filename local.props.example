@@ -1,0 +1,20 @@
+<!--
+  local.props —— 本机个人覆盖（已被 .gitignore 忽略，不会入库）。
+  用法：复制本文件为 local.props，按需取消注释。全部可选——
+       通常 Sts2PathDiscovery.props 的自动发现就够了。
+-->
+<Project>
+    <PropertyGroup>
+        <!-- 游戏安装位置（自动发现失败时手动指定） -->
+        <!-- <Sts2Path>D:\Steam\steamapps\common\Slay the Spire 2</Sts2Path> -->
+
+        <!-- Steam 创意工坊目录（自动发现失败时手动指定） -->
+        <!-- <WorkshopDir>D:\Steam\steamapps\workshop\content\2868840</WorkshopDir> -->
+
+        <!-- Godot 4.5.1 mono 可执行文件：仅导出 .pck 时需要 -->
+        <!-- <GodotPath>D:\Godot\Godot_v4.5.1-stable_mono_win64\Godot_v4.5.1-stable_mono_win64.exe</GodotPath> -->
+
+        <!-- 模组安装目录名 -->
+        <!-- <ModFolderName>奥卡角色-Orca</ModFolderName> -->
+    </PropertyGroup>
+</Project>

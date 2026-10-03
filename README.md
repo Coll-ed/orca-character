@@ -1,37 +1,122 @@
-﻿# 银龙奥卡 · Slay the Spire 2 角色 mod —— 求助：**一打出卡牌就卡死**
+# 银龙奥卡 · Slay the Spire 2 角色 mod
 
-> 现象 100% 稳定复现，二分已做多轮。**请帮我判断"打牌"这条链路。**
+把「银龙奥卡」做成《杀戮尖塔2》里独立可选的角色。
 
-## 一、环境
+---
 
-| 项 | 值 |
+## 一、这是什么 / 不是什么（重要边界）
+
+「银龙奥卡」在游戏里由**三个模组**共同构成，本仓库只是其中之一：
+
+| 模组 | 提供 | 本仓库 |
+|---|---|---|
+| **本仓库** `OrcaCharacter` | 角色逻辑：卡牌 / 能力 / 遗物 / 关键词 / 纪元 / 音效挂点 | ✅ 就是它 |
+| `奥卡卡图`（`战士卡图mod1.1`） | 卡牌立绘等美术资源 | ❌ **不属于本工程，不读不改不复制** |
+| `奥卡皮肤-Orca` | 角色皮肤：`animations/`、`materials/`、`CharacterSkinManager` | ❌ **不属于本工程，不读不改不复制** |
+
+因此代码里的 `res://images/...`、`res://animations/...`、`res://materials/...` 这类路径
+**由上面两个美术模组提供**，本仓库的 `.pck` 只负责自己的 `res://OrcaCharacter/localization/...`。
+**修改本工程时不要往 `images/ animations/ materials/ shaders/` 里放东西** —— 那是在越界改别人的资源。
+
+---
+
+## 二、目录结构
+
+```
+OrcaCharacter.csproj        ← Godot.NET.Sdk；MSBuild 入口
+OrcaCharacter.sln
+Directory.Build.props       ← 工程常量（模组目录名、Godot 路径来源）
+Sts2PathDiscovery.props     ← 游戏安装位置自动发现（注册表 / Steam），零绝对路径
+local.props.example         ← 本机覆盖模板（local.props 已 gitignore）
+OrcaCharacter.json          ← 模组清单（mod id / 依赖 BaseLib / has_pck / has_dll）
+project.godot               ← Godot 工程文件（只为导出 .pck 而存在）
+export_presets.cfg          ← Godot 导出预设 "BasicExport"
+.gitignore
+
+OrcaCharacterCode/          ← 全部 C# 源码，按功能分目录
+├── Core/        角色本体、启动、配置、日志、卡牌基类、关键词、卡池
+├── Cards/       卡牌定义
+├── Powers/      能力（Power）模型
+├── Patches/     Harmony 补丁
+├── Epochs/      纪元
+├── UI/          图标、能量珠、卡面 UI、皮肤挂点
+├── Relics/      遗物
+├── Audio/       音频与台词
+└── _空文件/     0 字节残留文件（隔离保留，待确认后删除）
+
+OrcaCharacter/              ← Godot 资源根 = res://
+└── localization/zhs/*.json
+
+docs/
+├── 官方wiki-modding/       ← 官方 modding wiki 摘录
+└── 参考-好工程-StS2-NotEnoughDifficulty/   ← 工程约定的参照标准（见 §五）
+```
+
+---
+
+## 三、构建与部署（一条链，改的就是跑的）
+
+```powershell
+dotnet build          # 编译 → 自动把 dll / json / pdb 复制进 mods 目录
+dotnet publish        # 上面 + 用 Godot 导出 .pck（需要 GodotPath）
+```
+
+`OrcaCharacter.csproj` 里的 `CopyToModsFolderOnBuild` / `GodotPublish` 两个 Target
+保证**游戏目录里的构件一定是源码编出来的那一份**，不存在手工拷贝导致的漂移。
+
+**这条链是硬要求，不是便利设施。** 本工程此前长期存在「改了源码、游戏里跑的却是旧构件」
+的问题，排查任何行为差异前，先确认部署态与源码一致。
+
+### 依赖与路径
+
+依赖 dll **不在本仓库**（版权原因）：`sts2.dll` / `0Harmony.dll` 取自游戏安装目录，
+`BaseLib.dll` 取自 Steam 创意工坊。位置由 `Sts2PathDiscovery.props` **自动发现**：
+
+1. 注册表 `HKLM\...\Uninstall\Steam App 2868840` 的 `InstallLocation`
+2. `HKCU\Software\Valve\Steam@SteamPath` 下的 `steamapps`
+3. 都失败时用 `/p:Sts2Path=...`、环境变量或 `local.props` 指定
+
+**任何文件里都不应出现本机绝对路径。** 需要覆盖时复制 `local.props.example` 为 `local.props`。
+
+---
+
+## 四、当前状态 / 已知缺口（不粉饰）
+
+| 项 | 状态 |
 |---|---|
-| 游戏 | Slay the Spire 2（Steam 版，分支 **public-beta**） |
-| 程序集 | `Slay the Spire 2\data_sts2_windows_x86_64\sts2.dll`（Godot 4.5 + .NET 9） |
-| 本 mod | 自研角色 mod「银龙奥卡」，C# / .NET 9 / Harmony ⇒ 产物 `<mod>.dll` + `<mod>.pck` + `<mod>.json` |
-| 依赖 | **BaseLib**（Steam Workshop `3737335127`） |
-| 编译 | `dotnet 9.0.315`，引用 `sts2.dll` / `GodotSharp.dll` / `0Harmony.dll` / `BaseLib.dll` |
+| 源码完整性 | 反编译恢复所得；与官方 `OrcaCharacter.dll` 逐文件 diff 仅差 1 个类（已补齐） |
+| `OrcaCharacterCode/Cards/Cards.cs` | **只恢复约 34%，从方法中间截断，已排除出编译** ⇒ 含 `OrcaBloodSword` 等卡牌，待按设计文档重写 |
+| `OrcaCharacterCode/_空文件/` | 3 个 0 字节残留（`OrcaEpochs` / `OrcaNirvanaSelfHarm` / `OrcaOverlookCompromise`） |
+| 本地化 | `OrcaCharacter/localization/zhs/` 部分文件是残缺桩（小于游戏内实际版本），待整理 |
+| 待验证改动 | 源码中残留 `TOGGLE-OFF-A2/A3/A4/A5/A7` 开关，对应的 6 处修复**尚未逐项实机验证** |
+| `.pck` | 本机未安装 Godot，**当前无法重新导出**；现用官方 `.pck` |
 
-## 二、现象
+---
+
+## 五、工程约定
+
+骨架（`.sln` / 根 `csproj` / `Sts2PathDiscovery.props` / Godot 导出 Target / 目录分法）
+参照 `Coll-ed/StS2-NotEnoughDifficulty`（公开仓库，MIT）。副本见
+`docs/参考-好工程-StS2-NotEnoughDifficulty/`，仅作阅读，不参与编译。
+
+改动纪律：**不写死路径 / 常量单一来源 / 先读再改 / 一次只改一个变量 / 结论由实机验证后下**。
+
+---
+
+## 六、待查问题：一打出卡牌就卡死
+
+> 保留此节供排查参考。**注意：此前的二分表是在「源码与部署不一致」的前提下做的，
+> 结论需重新验证。**
+
+### 现象
 
 - **过回合完全正常** ✓（回合开始补能量、外框特效、敌方回合都正常）
-- **一"打出卡牌"就卡死** ✗ —— 画面冻住、**进程还在**（Godot 主线程死锁形态）
-- **无异常、无堆栈、无弹窗** ✗
-- **百科大全正常** ✓
+- **一「打出卡牌」就卡死** ✗ —— 画面冻住、**进程还在**（Godot 主线程死锁形态）
+- **无异常、无堆栈、无弹窗**；百科大全正常 ✓
+- **打任何一张牌都会**（含最基础的「打击」），**冻在 `OnPlay` 之后**（`OnPlay` 内日志全部打出）
+- 正常退出有 `resources still in use at exit`；卡死时**没有**这一行
 
-## 三、已做的二分（每次只换一个变量）
-
-| 测试 | 结果 |
-|---|---|
-| **官方 dll（188,416 B）+ 同一套 pck** | ✅ **完全正常** ⇒ 问题在我们重编的 dll ✗ |
-| **最纯净环境**（去掉其它 mod） | ❌ 仍卡死 ⇒ **不是 mod 冲突** |
-| 去掉"注册自检"类 | ❌ 仍卡死 |
-| 修 `No suitable Formatter`（龙剑战况浮窗 SmartFormat，报错 2 次 → **0 次** ✓） | 报错消失，**卡死依旧** |
-| 修 `OrcaEnergyBurst.SweepRing` 的 `TweenProperty` 起点 `Nil`（`Type mismatch … Nil and float`）<br>（该报错**每回合都出现，而"过回合不冻"** ⇒ 很可能只是噪声） | ❌ 仍卡死 |
-| `Orca : CharacterModel` → `CustomCharacterModel` + `[CustomID("ORCA")]`（按 BaseLib wiki 接入注册体系） | ❌ 仍卡死（且引入角色选择界面多出几项皮肤的副作用） |
-| 与官方 dll **逐文件 diff**（反编译两份 dll 后比对） | 文件集合仅差 1 处：缺 `OrcaNirvanaSelfHarmPatch` ⇒ **已按官方补齐** ✓；其余"内容不同"绝大多数是**编译器闭包/状态机编号偏移**的假差异 ✓ |
-
-## 四、日志特征（每次一样）
+### 日志特征
 
 ```
 [INFO] Player 1 playing card ORCA_STRIKE (targeting …)
@@ -42,23 +127,17 @@
 （此后无任何输出 ⇒ 冻住）
 ```
 
-- **打任何一张牌都会**（连最基础的 `ORCA_STRIKE`「打击」也是）
-- **冻在 `OnPlay` 之后**：`OnPlay` 里的日志**全部打出来了**，冻在其后
-- 正常退出会有 `resources still in use at exit`；卡死时**没有**这一行
+### 已排除
 
-## 五、希望得到的帮助
+最纯净环境（移除其它 mod）仍卡死 ⇒ 非 mod 冲突；修 `No suitable Formatter`（SmartFormat 报错
+2 次 → 0 次）后仍卡死；`TweenProperty` 起点 `Nil` 的 `Type mismatch` 每回合都报但过回合不冻
+⇒ 大概率只是噪声；`Orca : CharacterModel` → `CustomCharacterModel` 后仍卡死（且引入角色选择
+界面多出皮肤项的副作用）。
 
-1. "打出卡牌"这条链路（`OnPlay` → 结算 → `AfterCardPlayed` → 卡牌移动/消耗 → UI 刷新）里，**哪些环节可能造成 Godot 主线程静默死锁**？
-2. 有没有已知的「自定义卡 + Harmony patch」在**出牌路径**上造成死锁的模式？
-3. 有没有办法**让这种冻结留下痕迹**？（关键路径加日志无效 —— 冻结点在日志之外；Godot 会吞托管异常）
-4. 是否与 `CardPileCmd` / `CardSelectCmd` / `AfterCardPlayed` 这类**异步钩子**的死锁有关？
+### 希望得到的帮助
 
-## 六、如何编译
-
-```powershell
-# 1) 依赖 dll 不在本仓库（版权原因），请自备：
-#    sts2.dll / GodotSharp.dll / 0Harmony.dll  ← 游戏目录 data_sts2_windows_x86_64\
-#    BaseLib.dll                              ← 创意工坊 2868840\3737335127\BaseLib\
-# 2) 改 Directory.Build.props 的 Sts2GameDir / Sts2WorkshopDir（支持同名环境变量覆盖）
-# 3) dotnet build src/OrcaCharacter.csproj -c Release
-```
+1. 「打出卡牌」链路（`OnPlay` → 结算 → `AfterCardPlayed` → 卡牌移动/消耗 → UI 刷新）里，
+   哪些环节可能造成 Godot 主线程静默死锁？
+2. 有没有已知的「自定义卡 + Harmony patch」在出牌路径上造成死锁的模式？
+3. 有没有办法让这种冻结留下痕迹？（关键路径加日志无效，冻结点在日志之外）
+4. 是否与 `CardPileCmd` / `CardSelectCmd` / `AfterCardPlayed` 这类异步钩子有关？

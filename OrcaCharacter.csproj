@@ -1,0 +1,97 @@
+<Project Sdk="Godot.NET.Sdk/4.5.1" InitialTargets="CheckDependencyPaths">
+    <!--
+      Sdk 版本 4.5.1 为字面量：MSBuild 在解析 Sdk 属性时尚未加载任何 props，无法外置。
+      取值理由（hardcode-ok）：游戏内置 MegaDot 4.5.1，官方说明「用更新版本 Godot 导出的 .pck 游戏不加载」。
+      参照标准：Coll-ed/StS2-NotEnoughDifficulty 的 csproj。
+    -->
+    <Import Project=".\Sts2PathDiscovery.props" />
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>true</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <AssemblyName>OrcaCharacter</AssemblyName>
+        <RootNamespace>OrcaCharacter</RootNamespace>
+        <AppOutputBase>$(MSBuildProjectDirectory)\</AppOutputBase>
+        <PathMap>$(AppOutputBase)=.\</PathMap>
+        <!-- 宿主已初始化 Godot 插件，模组程序集必须关掉这个源生成器 -->
+        <GodotDisabledSourceGenerators>GodotPluginsInitializer</GodotDisabledSourceGenerators>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <!-- 模组面向所有平台（MSIL），本机 StS2 是特定平台，架构不匹配警告无意义 -->
+        <NoWarn>$(NoWarn);MSB3270</NoWarn>
+        <CustomModsPath>$(ModsPath)$(ModFolderName)</CustomModsPath>
+    </PropertyGroup>
+
+    <!-- ── 依赖程序集：路径全部来自 Sts2PathDiscovery.props，不写死 ────────── -->
+    <ItemGroup Condition="Exists('$(Sts2DataDir)')">
+        <Reference Include="sts2">
+            <HintPath>$(Sts2DataDir)/sts2.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+        <Reference Include="0Harmony">
+            <HintPath>$(Sts2DataDir)/0Harmony.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+    </ItemGroup>
+
+    <!-- BaseLib 是创意工坊模组（不是 NuGet 包），版本须与 OrcaCharacter.json 的 min_version 一致 -->
+    <ItemGroup Condition="Exists('$(WorkshopDir)/$(BaseLibPublishedFileId)/BaseLib/BaseLib.dll')">
+        <Reference Include="BaseLib">
+            <HintPath>$(WorkshopDir)/$(BaseLibPublishedFileId)/BaseLib/BaseLib.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+    </ItemGroup>
+
+    <!-- ── 编译项 ─────────────────────────────────────────────────────── -->
+    <ItemGroup>
+        <!-- Cards.cs 只恢复了约 34% 且从方法中间截断，排除出编译（待按设计文档重写） -->
+        <Compile Remove="OrcaCharacterCode/Cards/Cards.cs" />
+        <!-- 资源目录不含 C#，显式排除避免 Godot 源生成器扫进去 -->
+        <Compile Remove="OrcaCharacter/**" />
+        <Compile Remove="docs/**" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include=".gitignore" />
+        <None Include="OrcaCharacter.json" />
+        <None Include="project.godot" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <AdditionalFiles Include="OrcaCharacter/localization/**/*.json" />
+    </ItemGroup>
+
+    <!-- ── 边界显式：依赖缺失就报错，不静默降级 ───────────────────────── -->
+    <Target Name="CheckDependencyPaths">
+        <Error Text=" 找不到《杀戮尖塔2》数据目录 '$(Sts2DataDir)'。请用 /p:Sts2Path=... 或 local.props 指定。"
+               Condition="'$(Sts2DataDir)' == '' or !Exists('$(Sts2DataDir)')" />
+        <Error Text=" 找不到 BaseLib（创意工坊 $(BaseLibPublishedFileId)）。请确认 BaseLib 已订阅。"
+               Condition="!Exists('$(WorkshopDir)/$(BaseLibPublishedFileId)/BaseLib/BaseLib.dll')" />
+    </Target>
+
+    <!-- ── 构建后自动落到 mods 目录：源码与游戏内构件保持一致 ────────────── -->
+    <!-- AfterTargets 用 Build：本工程不定义 PostBuildEvent，挂 PostBuildEvent 不会触发（实测） -->
+    <Target Name="CopyToModsFolderOnBuild" AfterTargets="Build">
+        <Message Text="[Orca] 复制 dll / json / pdb → $(CustomModsPath)" Importance="high" />
+        <MakeDir Directories="$(CustomModsPath)" />
+        <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(CustomModsPath)" />
+        <Copy SourceFiles="$(MSBuildProjectDirectory)/OrcaCharacter.json" DestinationFolder="$(CustomModsPath)" />
+        <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(CustomModsPath)" ContinueOnError="WarnAndContinue" />
+    </Target>
+
+    <!-- ── 发布时用 Godot 导出 pck（不自己拼包）──────────────────────────── -->
+    <Target Name="NeedGodotForPublish" BeforeTargets="Publish">
+        <Error Text=" 发布需要 Godot 4.5.1 mono。请设置 /p:GodotPath=... 或 local.props，当前 GodotPath='$(GodotPath)'。"
+               Condition="'$(GodotPath)' == '' or !Exists('$(GodotPath)')" />
+    </Target>
+
+    <Target Name="GodotPublish" AfterTargets="Publish"
+            Condition="'$(GodotPath)' != '' and Exists('$(GodotPath)') and '$(IsInnerGodotExport)' != 'true'">
+        <Message Text="[Orca] 导出 .pck → $(CustomModsPath)/$(MSBuildProjectName).pck" Importance="high" />
+        <Exec Command="&quot;$(GodotPath)&quot; --headless --export-pack &quot;BasicExport&quot; &quot;$(CustomModsPath)/$(MSBuildProjectName).pck&quot;"
+              EnvironmentVariables="IsInnerGodotExport=true;MSBUILDDISABLENODEREUSE=1" ContinueOnError="WarnAndContinue" />
+    </Target>
+</Project>

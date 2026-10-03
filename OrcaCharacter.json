@@ -1,0 +1,17 @@
+{
+  "id": "OrcaCharacter",
+  "name": "银龙奥卡",
+  "author": "@Coll-ed",
+  "description": "把银龙奥卡加入《杀戮尖塔2》作为独立可选角色（60 生命 / 起始遗物「银龙血统」/ 起始卡组 打击·防御·龙族魔典·嗜血龙剑）。",
+  "version": "0.1.0",
+  "has_pck": true,
+  "has_dll": true,
+  "dependencies": [
+    {
+      "id": "BaseLib",
+      "min_version": "v3.4.7"
+    }
+  ],
+  "affects_gameplay": true,
+  "min_game_version": "0.111.0"
+}

@@ -1,0 +1,51 @@
+# ============ .NET / C# 构建产物 ============
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+*.binlog
+
+# ============ IDE / 编辑器 ============
+.vs/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ============ Godot 4 ============
+# 编辑器导入缓存与生成的 mono 程序集，可重新生成
+.godot/
+.import/
+
+# 注意：以下 Godot 文件【需要】提交，不要忽略
+# - *.import         （资源导入配置）
+# - *.uid            （资源 UID）
+# - project.godot
+# - export_presets.cfg
+
+# ============ 本机路径 / 个人配置覆盖 ============
+local.props
+Directory.Build.user.props
+
+# ============ 备份 / 临时文件 ============
+*.old
+*.old.*
+*.bak
+*.tmp
+*.log
+dev/
+
+# ============ 参考副本（抓取自公开仓库，仅供阅读）============
+# docs/参考-*/ 保留入库：它是工程约定的依据，需与代码一同演进。
+
+# ============ NuGet ============
+packages/
+*.nupkg
+.nuget/
+
+# ============ OS 特定 ============
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db

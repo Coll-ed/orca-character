@@ -1,0 +1,57 @@
+<Project>
+    <!--
+      自动发现《杀戮尖塔2》安装位置，填充 Sts2Path / ModsPath / Sts2DataDir。
+      优先级：MSBuild 参数(/p:Sts2Path=...) > 环境变量 > local.props > 本文件的自动探测。
+      无需在仓库里写死任何本机绝对路径。
+      参照：Coll-ed/StS2-NotEnoughDifficulty 的同名文件（工程骨架的标准做法）。
+    -->
+    <PropertyGroup>
+        <IsLinux>false</IsLinux>
+        <IsOSX>false</IsOSX>
+        <IsLinux Condition="$([MSBuild]::IsOSPlatform('Linux'))">true</IsLinux>
+        <IsOSX Condition="$([MSBuild]::IsOSPlatform('OSX'))">true</IsOSX>
+    </PropertyGroup>
+
+    <!-- ── Windows ─────────────────────────────────────────────── -->
+    <PropertyGroup Condition="'$(IsLinux)' != 'true' And '$(IsOSX)' != 'true'">
+        <!-- 1) 先问注册表：Steam 卸载项里带安装位置 -->
+        <RegistrySts2Path>$([MSBuild]::GetRegistryValueFromView('HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Steam App 2868840', 'InstallLocation', '', RegistryView.Registry64, RegistryView.Registry32))</RegistrySts2Path>
+        <!-- 2) 再问 Steam 自身的安装位置（2868840 = 杀戮尖塔2 的 Steam AppID） -->
+        <AutoSteamPath>$(registry:HKEY_CURRENT_USER\Software\Valve\Steam@SteamPath)\steamapps</AutoSteamPath>
+        <SteamLibraryPath Condition="'$(SteamLibraryPath)' == '' and Exists('$(AutoSteamPath)/common/Slay the Spire 2')">$(AutoSteamPath)</SteamLibraryPath>
+        <SteamLibraryPath Condition="'$(SteamLibraryPath)' == ''">C:/Program Files (x86)/Steam/steamapps</SteamLibraryPath>
+
+        <Sts2Path Condition="'$(Sts2Path)' == '' and Exists('$(SteamLibraryPath)/common/Slay the Spire 2')">$(SteamLibraryPath)/common/Slay the Spire 2</Sts2Path>
+        <Sts2Path Condition="'$(Sts2Path)' == '' and Exists('$(RegistrySts2Path)/data_sts2_windows_x86_64')">$(RegistrySts2Path)</Sts2Path>
+        <Sts2Path Condition="'$(Sts2Path)' == ''">$(SteamLibraryPath)/common/Slay the Spire 2</Sts2Path>
+
+        <ModsPath>$(Sts2Path)/mods/</ModsPath>
+        <Sts2DataDir>$(Sts2Path)/data_sts2_windows_x86_64</Sts2DataDir>
+    </PropertyGroup>
+
+    <!-- ── Linux ───────────────────────────────────────────────── -->
+    <PropertyGroup Condition="'$(IsLinux)' == 'true'">
+        <SteamLibraryPath Condition="'$(SteamLibraryPath)' == ''">$(HOME)/.local/share/Steam/steamapps</SteamLibraryPath>
+        <Sts2Path Condition="'$(Sts2Path)' == ''">$(SteamLibraryPath)/common/Slay the Spire 2</Sts2Path>
+        <ModsPath>$(Sts2Path)/mods/</ModsPath>
+        <Sts2DataDir>$(Sts2Path)/data_sts2_linuxbsd_x86_64</Sts2DataDir>
+    </PropertyGroup>
+
+    <!-- ── macOS ───────────────────────────────────────────────── -->
+    <PropertyGroup Condition="'$(IsOSX)' == 'true'">
+        <SteamLibraryPath Condition="'$(SteamLibraryPath)' == ''">$(HOME)/Library/Application Support/Steam/steamapps</SteamLibraryPath>
+        <Sts2Path Condition="'$(Sts2Path)' == ''">$(SteamLibraryPath)/common/Slay the Spire 2</Sts2Path>
+        <ModsPath>$(Sts2Path)/SlayTheSpire2.app/Contents/MacOS/mods/</ModsPath>
+        <Sts2DataDir>$(Sts2Path)/SlayTheSpire2.app/Contents/Resources/data_sts2_macos_x86_64</Sts2DataDir>
+    </PropertyGroup>
+
+    <!--
+      创意工坊依赖（BaseLib）的发现：workshop/content/<AppID>/<PublishedFileId>/<ModName>/
+      AppID 与 PublishedFileId 都是 Steam 平台标识，不是本机路径，故在此集中声明。
+    -->
+    <PropertyGroup>
+        <Sts2AppId Condition="'$(Sts2AppId)' == ''">2868840</Sts2AppId>
+        <BaseLibPublishedFileId Condition="'$(BaseLibPublishedFileId)' == ''">3737335127</BaseLibPublishedFileId>
+        <WorkshopDir Condition="'$(WorkshopDir)' == ''">$(Sts2Path)/../../workshop/content/$(Sts2AppId)</WorkshopDir>
+    </PropertyGroup>
+</Project>
