@@ -1,0 +1,6 @@
+﻿来源仓库 : https://github.com/Coll-ed/StS2-NotEnoughDifficulty
+分支     : main
+commit   : 7ac8fec91b8ae984c81c10467e77110d41ed255d
+抓取时间 : 2026-10-04 00:22:25
+备注     : 「银龙奥卡」工程骨架的参照标准。取此工程的 csproj / props / 部署 Target / 目录约定。
+           本目录仅为参考副本,不参与编译。
