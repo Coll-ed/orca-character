@@ -1,0 +1,18 @@
+{
+  "ORCA.title": "银龙奥卡",
+  "ORCA.titleObject": "银龙奥卡",
+  "ORCA.description": "年轻善良，莽撞却在关键又总是十分可靠的银龙少女。\
+  "ORCA.aromaPrinciple": "[sine][red]我能感受到生命消亡的痛苦，我明白那是何种感受。[/red][/sine]",
+  "ORCA.cardsModifierDescription": "银龙奥卡的卡牌现在会出现在奖励和商店中。",
+  "ORCA.cardsModifierTitle": "银龙奥卡卡牌",
+  "ORCA.eventDeathPrevention": "以伊梅特拉之名，我……不能在这里倒下。",
+  "ORCA.goldMonologue": "[sine]这个我想给妈妈留着……[/sine]",
+  "ORCA.possessiveAdjective": "她的",
+  "ORCA.pronounObject": "她",
+  "ORCA.pronounPossessive": "她的",
+  "ORCA.pronounSubject": "她",
+  "ORCA.unlockText": "银龙奥卡模组角色已可直接游玩。",
+  "ORCA.bestiaryQuote": "[sine]又是一条被记录下来的生命……[/sine]",
+  "ORCA.banter.alive.endTurnPing": "[sine]别急，慢慢来就好。[/sine]",
+  "ORCA.banter.dead.endTurnPing": "[sine]……对不起。[/sine]"
+}

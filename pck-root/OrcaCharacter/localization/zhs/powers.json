@@ -1,0 +1,19 @@
+{
+  "ORCA_BURN_POWER.description": "敌方回合结束时，消耗所有层数，对每个带焚烧的敌人造成（层数）点伤害。",
+  "ORCA_BURN_POWER.title": "焚烧",
+  "ORCA_CODEX_ECHO_POWER.description": "下次打出[gold]龙族魔典[/gold]时，额外多打出（层数）次。",
+  "ORCA_CODEX_ECHO_POWER.title": "回响",
+  "ORCA_CRIMSON_TEMPER_POWER.description": "[gold]嗜血魔剑[/gold]下次造成的伤害提升（每档 0.1 倍）。",
+  "ORCA_CRIMSON_TEMPER_POWER.title": "红莲淬",
+  "ORCA_HEAL_BONUS_POWER.description": "获得 50% 额外治疗加成；每次消耗卡牌，本回合再 +5%。",
+  "ORCA_HEAL_BONUS_POWER.title": "焚文",
+  "ORCA_KILLING_INTENT_POWER.description": "你的下一张**攻击牌**会额外打出一次。",
+  "ORCA_KILLING_INTENT_POWER.title": "杀意",
+  "ORCA_LIFESTEAL_POWER.description": "打出攻击牌造成未被格挡的伤害时回复生命：\
+  "ORCA_LIFESTEAL_POWER.smartDescription": "打出攻击牌造成未被格挡的伤害时回复生命：\
+  "ORCA_LIFESTEAL_POWER.title": "吸血",
+  "ORCA_LINEAGE_POWER.description": "你的下一张**能力牌**会额外打出一次。",
+  "ORCA_LINEAGE_POWER.title": "血统",
+  "ORCA_WISDOM_POWER.description": "你的下一张**技能牌**会额外打出一次。",
+  "ORCA_WISDOM_POWER.title": "智慧"
+}

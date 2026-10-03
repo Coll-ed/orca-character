@@ -1,0 +1,24 @@
+<Project>
+
+  <!--
+    依赖路径的**唯一来源**（工程纪律 #1：路径不写死在 csproj 里，只引用符号）。
+    要换机器 / 换安装位置，只改这一个文件；也可用同名环境变量覆盖，例如：
+      $env:Sts2GameDir = "E:\Games\Slay the Spire 2"
+  -->
+  <PropertyGroup>
+    <Sts2GameDir Condition="'$(Sts2GameDir)' == ''">D:\Steam\steamapps\common\Slay the Spire 2</Sts2GameDir>
+    <Sts2DataDir Condition="'$(Sts2DataDir)' == ''">$(Sts2GameDir)\data_sts2_windows_x86_64</Sts2DataDir>
+    <!-- BaseLib 是**创意工坊** mod，不在本地 mods\ 目录 -->
+    <Sts2WorkshopDir Condition="'$(Sts2WorkshopDir)' == ''">D:\Steam\steamapps\workshop\content\2868840</Sts2WorkshopDir>
+    <BaseLibDll Condition="'$(BaseLibDll)' == ''">$(Sts2WorkshopDir)\3737335127\BaseLib\BaseLib.dll</BaseLibDll>
+  </PropertyGroup>
+
+  <!-- 依赖程序集：csproj 只管引用符号，不写绝对路径 -->
+  <ItemGroup>
+    <Reference Include="sts2">       <HintPath>$(Sts2DataDir)\sts2.dll</HintPath>       <Private>false</Private></Reference>
+    <Reference Include="GodotSharp"> <HintPath>$(Sts2DataDir)\GodotSharp.dll</HintPath> <Private>false</Private></Reference>
+    <Reference Include="0Harmony">   <HintPath>$(Sts2DataDir)\0Harmony.dll</HintPath>   <Private>false</Private></Reference>
+    <Reference Include="BaseLib">    <HintPath>$(BaseLibDll)</HintPath>                 <Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>
