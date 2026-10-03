@@ -102,7 +102,36 @@ dotnet publish        # 上面 + 用 Godot 导出 .pck（需要 GodotPath）
 参照 `Coll-ed/StS2-NotEnoughDifficulty`（公开仓库，MIT）。副本见
 `docs/参考-好工程-StS2-NotEnoughDifficulty/`，仅作阅读，不参与编译。
 
-改动纪律：**不写死路径 / 常量单一来源 / 先读再改 / 一次只改一个变量 / 结论由实机验证后下**。
+### ★ 同源重建（硬规矩）
+
+**`dll` 与 `pck` 必须来自同一棵源码树的同一次重建。**
+
+两者是同一工程编出的两个独立产物：`pck` 由 Godot 导出（装资源），`dll` 由 MSBuild 编出（装代码）。
+因此它们**不是同一条编译输出** —— 混用不会当场报错，但会让**任何行为差异都无法归因**。
+
+本工程曾长期踩这个坑：同一份 `OrcaCharacter/localization/zhs/cards.json` 同时存在三个版本
+（官方 `pck` 里 6189 字节 / 中途重打包的 6288 / 仓库 `assets/` 里 6293），
+导致「改了 X 所以 Y 变了」这类推理全部建立在乱账上。
+
+**操作要求：**
+
+```powershell
+dotnet publish      # 一次把 dll 与 pck 都重建到 mods 目录，不要手工替换其中一个
+```
+
+需要单独改动某一边时，**必须先确认另一边的产物也来自当前源码**，否则这次改动的结果不可采信。
+
+### 其他纪律
+
+**不写死路径 / 常量单一来源 / 先读再改 / 一次只改一个变量 / 结论由实机验证后下。**
+
+### Godot 版本约束
+
+游戏内置 MegaDot **4.5.1**。**用更新版本 Godot 导出的 `.pck` 游戏不加载** ——
+所以 `OrcaCharacter.csproj` 固定 `Sdk="Godot.NET.Sdk/4.5.1"`，导出也须用 Godot 4.5.1 mono。
+
+`.godot/imported/` 与 `.godot/exported/` **必须入库**：`.pck` 里就包含这些导入产物，
+不提交它们就无法在没有 Godot 的机器上复现打包。`.gitignore` 因此只忽略 `.godot/mono/`（编译产物）。
 
 ---
 

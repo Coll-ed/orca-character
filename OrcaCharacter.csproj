@@ -82,7 +82,15 @@
         <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(CustomModsPath)" ContinueOnError="WarnAndContinue" />
     </Target>
 
-    <!-- ── 发布时用 Godot 导出 pck（不自己拼包）──────────────────────────── -->
+    <!-- ── 发布时用 Godot 导出 pck（不自己拼包）────────────────────────────
+         导出到暂存目录并校验，通过后才复制到 mods：
+         曾实测「ContinueOnError=WarnAndContinue」会让一次失败的导出（标准 Godot 缺 Spine
+         模块，54 MB → 2.5 MB）静默覆盖可用的 .pck。故此处失败必须让构建失败。 -->
+    <PropertyGroup>
+        <PckStagingDir>$(MSBuildProjectDirectory)/.godot/pck-stage</PckStagingDir>
+        <PckStagingPath>$(PckStagingDir)/$(MSBuildProjectName).pck</PckStagingPath>
+    </PropertyGroup>
+
     <Target Name="NeedGodotForPublish" BeforeTargets="Publish">
         <Error Text=" 发布需要 Godot 4.5.1 mono。请设置 /p:GodotPath=... 或 local.props，当前 GodotPath='$(GodotPath)'。"
                Condition="'$(GodotPath)' == '' or !Exists('$(GodotPath)')" />
@@ -90,8 +98,14 @@
 
     <Target Name="GodotPublish" AfterTargets="Publish"
             Condition="'$(GodotPath)' != '' and Exists('$(GodotPath)') and '$(IsInnerGodotExport)' != 'true'">
-        <Message Text="[Orca] 导出 .pck → $(CustomModsPath)/$(MSBuildProjectName).pck" Importance="high" />
-        <Exec Command="&quot;$(GodotPath)&quot; --headless --export-pack &quot;BasicExport&quot; &quot;$(CustomModsPath)/$(MSBuildProjectName).pck&quot;"
-              EnvironmentVariables="IsInnerGodotExport=true;MSBUILDDISABLENODEREUSE=1" ContinueOnError="WarnAndContinue" />
+        <MakeDir Directories="$(PckStagingDir)" />
+        <Delete Files="$(PckStagingPath)" ContinueOnError="WarnAndContinue" />
+        <Message Text="[Orca] 导出 .pck → $(PckStagingPath)" Importance="high" />
+        <Exec Command="&quot;$(GodotPath)&quot; --headless --export-pack &quot;BasicExport&quot; &quot;$(PckStagingPath)&quot;"
+              EnvironmentVariables="IsInnerGodotExport=true;MSBUILDDISABLENODEREUSE=1" />
+        <Error Text=" Godot 导出未产出 .pck：$(PckStagingPath)"
+               Condition="!Exists('$(PckStagingPath)')" />
+        <Copy SourceFiles="$(PckStagingPath)" DestinationFolder="$(CustomModsPath)" />
+        <Message Text="[Orca] .pck 已落到 $(CustomModsPath)" Importance="high" />
     </Target>
 </Project>
