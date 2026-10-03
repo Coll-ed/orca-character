@@ -1,2 +1,13 @@
 # Normalize EOL for all files that Git considers text files.
 * text=auto eol=lf
+
+# ── 二进制资源:禁止 Git 做任何换行/EOL 处理 ────────────────
+*.png     binary
+*.ctex    binary
+*.res     binary
+*.mp3str  binary
+*.spatlas binary
+*.spskel  binary
+*.remap   binary
+*.pck     binary
+*.dll     binary

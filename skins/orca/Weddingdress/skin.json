@@ -1,0 +1,36 @@
+{
+  "character_id": "ORCA",
+  "skin_id": "Orca_Weddingdress",
+  "display_name": "婚纱",
+  "battle": {
+    "skeleton_data_path": "res://animations/Orcaweddingdress/characters/ironclad/ironclad_skel_data.tres",
+    "idle": "idle_loop",
+    "attack": "attack",
+    "cast": "cast",
+    "hurt": "hurt",
+    "die": "die",
+    "relaxed": "relaxed_loop"
+  },
+  "merchant": {
+    "skeleton_data_path": "res://animations/Orcaweddingdress/merchant/ironclad/ironclad_merchant_skel_data.tres",
+    "animation": "relaxed_loop"
+  },
+  "rest": {
+    "skeleton_data_path": "res://animations/Orcaweddingdress/rest_site/ironclad/rest_site_ironclad_skel_data.tres",
+    "act0": "overgrowth_loop",
+    "act1": "hive_loop",
+    "act2": "glory_loop"
+  },
+  "charselect": {
+    "skeleton_data_path": "res://animations/Orcaweddingdress/character_select/ironclad/characterselect_ironclad_skel_data.tres",
+    "animation": "animation"
+  },
+  "preview": {
+    "use_battle_skeleton": true,
+    "animation": "idle_loop",
+    "scale_x": 0.25,
+    "scale_y": 0.25,
+    "position_x": 120,
+    "position_y": 150
+  }
+}

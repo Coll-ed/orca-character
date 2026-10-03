@@ -1,0 +1,17 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/orca_ring_sweep.gdshader" id="1_orca"]
+
+[resource]
+resource_local_to_scene = true
+shader = ExtResource("1_orca")
+shader_parameter/color_dark = Color(0.03, 0.03, 0.04, 1)
+shader_parameter/color_bright = Color(0.72, 0.09, 0.1, 1)
+shader_parameter/mid_gamma = 1.25
+shader_parameter/lum_boost = 1.0
+shader_parameter/sweep_color = Color(1, 1, 1, 1)
+shader_parameter/sweep_angle = 0.0
+shader_parameter/sweep_width = 42.0
+shader_parameter/sweep_strength = 0.0
+shader_parameter/sweep_alpha = 0.42
+shader_parameter/sweep_whiteout = 0.0

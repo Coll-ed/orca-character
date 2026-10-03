@@ -1,0 +1,7 @@
+[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcaheal_bonusspr"]
+
+[ext_resource type="Texture2D" uid="uid://corcaheal_bonus01" path="res://images/powers/orca_heal_bonus_power.png" id="1_orca"]
+
+[resource]
+atlas = ExtResource("1_orca")
+region = Rect2(0, 0, 64, 64)

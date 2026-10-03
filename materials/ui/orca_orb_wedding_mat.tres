@@ -1,0 +1,11 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3]
+
+[ext_resource type="Shader" path="res://shaders/orca_orb_tint.gdshader" id="1_orca"]
+
+[resource]
+resource_local_to_scene = true
+shader = ExtResource("1_orca")
+shader_parameter/color_dark = Color(0.75, 0.05, 0.07, 1)
+shader_parameter/color_bright = Color(1, 1, 1, 1)
+shader_parameter/mid_gamma = 1.35
+shader_parameter/lum_boost = 1.25

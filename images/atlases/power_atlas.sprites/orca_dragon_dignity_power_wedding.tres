@@ -1,0 +1,7 @@
+[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcadragondignitypowerweddingspr"
+
+[ext_resource type="Texture2D" uid="uid://corcadragondignitypowerwedding" path="res://images/powers/orca_dragon_dignity_power_wedding.png" id="1_orca"]
+
+[resource]
+atlas = ExtResource("1_orca")
+region = Rect2(0, 0, 64, 64)

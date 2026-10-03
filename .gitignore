@@ -14,8 +14,14 @@ obj/
 *.swo
 
 # ============ Godot 4 ============
-# 编辑器导入缓存与生成的 mono 程序集，可重新生成
-.godot/
+# 只忽略可再生的编译产物；.godot/imported 与 .godot/exported 必须入库——
+# 模组的 .pck 里就包含这些导入产物，本机没有 Godot 无法重新生成。
+# 注意：不能写 `.godot/`（整目录排除后无法再单独找回子目录）。
+.godot/mono/
+.godot/editor/
+.godot/shader_cache/
+.godot/uid_cache.bin
+.godot/global_script_class_cache.cfg
 .import/
 
 # 注意：以下 Godot 文件【需要】提交，不要忽略
