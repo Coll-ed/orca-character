@@ -82,14 +82,17 @@ dotnet publish        # 上面 + 用 Godot 导出 .pck（需要 GodotPath）
 
 ## 四、当前状态 / 已知缺口（不粉饰）
 
+本仓库**即工程本体**，不依赖任何反编译/恢复阶段的外部产物：`dotnet build` 即可从本目录
+编出可部署的构件。
+
 | 项 | 状态 |
 |---|---|
-| 源码完整性 | 反编译恢复所得；与官方 `OrcaCharacter.dll` 逐文件 diff 仅差 1 个类（已补齐） |
-| `OrcaCharacterCode/Cards/Cards.cs` | **只恢复约 34%，从方法中间截断，已排除出编译** ⇒ 含 `OrcaBloodSword` 等卡牌，待按设计文档重写 |
-| `OrcaCharacterCode/_空文件/` | 3 个 0 字节残留（`OrcaEpochs` / `OrcaNirvanaSelfHarm` / `OrcaOverlookCompromise`） |
-| 本地化 | `OrcaCharacter/localization/zhs/` 部分文件是残缺桩（小于游戏内实际版本），待整理 |
-| 待验证改动 | 源码中残留 `TOGGLE-OFF-A2/A3/A4/A5/A7` 开关，对应的 6 处修复**尚未逐项实机验证** |
-| `.pck` | 本机未安装 Godot，**当前无法重新导出**；现用官方 `.pck` |
+| `OrcaCharacterCode/Cards/Cards.cs` | **内容不完整、从方法中间截断，已排除出编译** ⇒ 含 `OrcaBloodSword` 等卡牌，待按设计补写 |
+| `OrcaCharacterCode/_空文件/` | 3 个 0 字节文件（`OrcaEpochs` / `OrcaNirvanaSelfHarm` / `OrcaOverlookCompromise`），待确认后删除 |
+| 本地化 | `OrcaCharacter/localization/zhs/` 部分文件内容少于游戏内实际版本，待整理 |
+| 待验证改动 | 源码中残留 `TOGGLE-OFF-A2/A3/A4/A5/A7` 开关，对应的修复**尚未逐项实机验证** |
+| `.pck` | 本机未安装 Godot，暂时无法重新导出；当前沿用既有 `.pck` |
+| `LICENSE` | 尚未选定 |
 
 ---
 
