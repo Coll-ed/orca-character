@@ -1,6 +1,5 @@
 using Godot;
 using HarmonyLib;
-using MegaCrit.Sts2.Core.Bindings.MegaSpine;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
 
@@ -66,19 +65,11 @@ internal static class OrcaCharacterIcon
             var illust = ResourceLoader.Load<Texture2D>(TargetSelectIllust);
             _weddingIllust = ResourceLoader.Load<Texture2D>(WeddingSelectIllustPath);   // 供"是否铺满"判断
 
-            // ★ 2026-10-04 新增（用户实测：「切换为板甲后，立绘变，但是人物不变」）：
-            //   原来只换 2D 贴图，站在选人界面上的 **Spine 骨架**不动
-            //   （Orca.GenerateAnimator 只在"生成动画器"时套骨架 ⇒ 进战斗才生效）。
-            //   这里把选人界面的骨架也一起就地重套 ⇒ 与 `OrcaSkin.CharSelectSkeleton` 同一来源。
-            var skeletonRes = ResourceLoader.Load<Resource>(OrcaSkin.CharSelectSkeleton);
-
-            int nSmall = 0, nIllust = 0, nSpine = 0;
-            Walk(tree.Root, small, illust, skeletonRes, ref nSmall, ref nIllust, ref nSpine);
+            int nSmall = 0, nIllust = 0;
+            Walk(tree.Root, small, illust, ref nSmall, ref nIllust);
 
             if (nSmall + nIllust > 0)
                 OrcaLog.Info($"[Orca] 角色图已就地刷新 → {OrcaSkin.Active}（小图 {nSmall} 个 / 立绘 {nIllust} 个）", 2);
-            if (nSpine > 0)
-                OrcaLog.Info($"[Orca] 选人骨架已就地重套 → {OrcaSkin.Active}（{nSpine} 个 SpineSprite）", 2);
         }
         catch (Exception ex)
         {
@@ -86,36 +77,8 @@ internal static class OrcaCharacterIcon
         }
     }
 
-    private static void Walk(Node node, Texture2D? small, Texture2D? illust, Resource? skeletonRes,
-                             ref int nSmall, ref int nIllust, ref int nSpine)
+    private static void Walk(Node node, Texture2D? small, Texture2D? illust, ref int nSmall, ref int nIllust)
     {
-        // ★ SpineSprite 是 GDExtension 的原生类，C# 侧没有对应类型可 `is` 判断
-        //   ⇒ 用 Godot 的原生类名比较（MegaSprite.spineClassName 的实据值就是 "SpineSprite"）。
-        if (skeletonRes != null && node.GetClass() == MegaSprite.spineClassName)
-        {
-            try
-            {
-                var sprite = new MegaSprite(node);
-
-                // ⚠️ 反编译实据：骨架是**异步**加载的，_Ready 是自下而上跑的
-                //   ⇒ 子节点的 _Ready 可能早于父 SpineSprite 就绪；此时驱动会 fail-fast 抛错。
-                //   所以必须先过 IsAnimationStateReady() 这道闸，未就绪就跳过（下一次刷新再来）。
-                if (!sprite.IsAnimationStateReady())
-                {
-                    OrcaLog.Info("[Orca] 选人骨架：SpineSprite 尚未就绪，本次跳过（下次刷新再套）", 2);
-                }
-                else
-                {
-                    sprite.SetSkeletonDataRes(new MegaSkeletonDataResource(skeletonRes));
-                    nSpine++;
-                }
-            }
-            catch (Exception ex)
-            {
-                OrcaLog.Warn($"[Orca] 选人骨架重套失败（不影响其它刷新）：{ex.Message}", 2);
-            }
-        }
-
         if (node is TextureRect tr && tr.Texture != null)
         {
             var path = tr.Texture.ResourcePath ?? string.Empty;
@@ -127,20 +90,11 @@ internal static class OrcaCharacterIcon
             }
             else if (illust != null && path.Contains("char_select_orca", StringComparison.Ordinal))
             {
-                // ★ 2026-10-04 修复（用户实测：「切换为婚纱后，立绘会是原格式，然后才放大占满框」）：
-                //   原来是**先按旧贴图算填充方式、再换贴图** ⇒ 切换那一帧 tr.Texture 还是板甲那张
-                //   ⇒ showingWedding 取到 false ⇒ 先按 KeepAspectCentered（原尺寸）画一帧，
-                //   下一次刷新才改成 KeepAspectCovered（铺满）⇒ 肉眼就是"先小后大"。
-                //   修法：**先换图，再按"将要显示的图"（illust）算填充方式**。
-                //   （原注释里那条"解耦"必须保留：首次启动时贴图可能已经是婚纱、但填充方式还没设过，
-                //     所以填充方式仍然独立校正，不放在 `tr.Texture != illust` 分支里。）
-                if (tr.Texture != illust)
-                {
-                    tr.Texture = illust;
-                    nIllust++;
-                }
-
-                bool showingWedding = _weddingIllust != null && illust == _weddingIllust;
+                // ★ 用户实测："第一次启动时婚纱覆盖没生效" —— 因为首次启动时模型补丁**已经把贴图设成婚纱**了，
+                //   原来把"改填充方式"和"换贴图"写在同一个 `Texture != illust` 分支里 ⇒ 条件为假 ⇒ 整段跳过 ⇒
+                //   铺满从没设过。所以这里**解耦**：填充方式按"这个节点当前显示的是哪张图"独立校正，
+                //   与是否需要换图无关。
+                bool showingWedding = _weddingIllust != null && tr.Texture == _weddingIllust;
                 var wantStretch = showingWedding
                     ? TextureRect.StretchModeEnum.KeepAspectCovered      // 婚纱：铺满（超出部分只裁显示层，不动原图）
                     : TextureRect.StretchModeEnum.KeepAspectCentered;    // 板甲：原版居中等比
@@ -149,11 +103,17 @@ internal static class OrcaCharacterIcon
                     tr.StretchMode = wantStretch;
                     nIllust++;
                 }
+
+                if (tr.Texture != illust)
+                {
+                    tr.Texture = illust;
+                    nIllust++;
+                }
             }
         }
 
         foreach (var child in node.GetChildren())
-            Walk(child, small, illust, skeletonRes, ref nSmall, ref nIllust, ref nSpine);
+            Walk(child, small, illust, ref nSmall, ref nIllust);
     }
 
     /// <summary>
