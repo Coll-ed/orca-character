@@ -90,17 +90,17 @@ internal static class OrcaCharacterIcon
             }
             else if (illust != null && path.Contains("char_select_orca", StringComparison.Ordinal))
             {
-                // ★ 用户实测："第一次启动时婚纱覆盖没生效" —— 因为首次启动时模型补丁**已经把贴图设成婚纱**了，
-                //   原来把"改填充方式"和"换贴图"写在同一个 `Texture != illust` 分支里 ⇒ 条件为假 ⇒ 整段跳过 ⇒
-                //   铺满从没设过。所以这里**解耦**：填充方式按"这个节点当前显示的是哪张图"独立校正，
-                //   与是否需要换图无关。
-                bool showingWedding = _weddingIllust != null && tr.Texture == _weddingIllust;
-                var wantStretch = showingWedding
-                    ? TextureRect.StretchModeEnum.KeepAspectCovered      // 婚纱：铺满（超出部分只裁显示层，不动原图）
-                    : TextureRect.StretchModeEnum.KeepAspectCentered;    // 板甲：原版居中等比
-                if (tr.StretchMode != wantStretch)
+                // ★ 2026-10-04 移除「婚纱铺满」特例（用户口径：原因是图不够大，现在补了 1468×2167 的原图）：
+                //   原来婚纱用 KeepAspectCovered（铺满、裁掉超出部分），板甲用原版的 KeepAspectCentered，
+                //   只为掩盖"婚纱立绘只有 608×768、居中等比会显示成一小块"这件事。
+                //   现在婚纱换成 1468×2167（面积 6.8 倍）⇒ 两套皮肤都走**原版居中等比**，不再有特例。
+                //
+                //   ⚠️ 这里仍然**独立校正**填充方式（不放进"需要换图"的分支里）—— 那是另一个已修 bug 的教训：
+                //   用户实测"第一次启动时婚纱覆盖没生效"，根因就是首次启动时贴图**已经是**目标图 ⇒
+                //   `Texture != illust` 为假 ⇒ 整段跳过 ⇒ 填充方式从没被设过。所以校正要与换图解耦。
+                if (tr.StretchMode != TextureRect.StretchModeEnum.KeepAspectCentered)
                 {
-                    tr.StretchMode = wantStretch;
+                    tr.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
                     nIllust++;
                 }
 
