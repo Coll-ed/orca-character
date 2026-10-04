@@ -19,9 +19,11 @@ namespace OrcaCharacter;
 // ═══════════════════════════════════════════════════════════════════════
 
 /// <summary>
-///     ★ 血焰剑鞘（1 费 · 魔剑 · 技能 · 蓝卡 Uncommon；敲后扣除比例 10% → **20%**）。
+///     ★ 血焰剑鞘（1 费 · 魔剑 · 技能 · 蓝卡 Uncommon；敲后扣除比例 20% → **30%**）。
 ///
-///     <para>用户口径：<i>"消耗 10% 当前生命值，为【嗜血龙剑】附加（消耗生命）点伤害"</i>。</para>
+///     <para>权威口径（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L9-11）：
+///     <i>"1能量，魔剑，技能牌，蓝卡，敲后变为扣除 **30%** 当前生命 /
+///     消耗 **20%** 当前生命值，为【嗜血龙剑】附加（消耗生命）点伤害"</i>。</para>
 ///
 ///     <para>实现：失去生命走 <c>CreatureCmd.SetCurrentHp</c>（**绕开伤害管线**，与龙剑主动打出同一套写法
 ///     —— 自残不该触发受击类遗物，但**会**触发银龙血统的"当前生命变化"钩子，符合既有口径）；
@@ -29,8 +31,14 @@ namespace OrcaCharacter;
 /// </summary>
 public sealed class OrcaBloodScabbard : OrcaCard
 {
-    /// <summary>消耗当前生命的百分比（10 → 敲后 20）。</summary>
-    private int _percent = 10;
+    /// <summary>基础消耗比例（%）。</summary>
+    private const int BasePercent = 20;      // 权威：20%（卡牌说明1.txt L11「消耗20%当前生命值」）
+
+    /// <summary>敲后消耗比例（%）。</summary>
+    private const int UpgradedPercent = 30;  // 权威：30%（卡牌说明1.txt L10「敲后变为扣除30%当前生命」）
+
+    /// <summary>当前消耗比例（敲后 30%，否则 20%）—— 结算、卡面、日志共用此口径。</summary>
+    private int CurrentPercent => IsUpgraded ? UpgradedPercent : BasePercent;
 
     /// <summary>
     ///     ★ 卡面格式（用户口径 2026-09-16）：**「XX%（具体数值）」** ——
@@ -42,7 +50,7 @@ public sealed class OrcaBloodScabbard : OrcaCard
         try
         {
             var me = Owner?.Creature;
-            if (me != null) loss = (int)Math.Floor(me.CurrentHp * _percent / 100.0m);
+            if (me != null) loss = (int)Math.Floor(me.CurrentHp * CurrentPercent / 100.0m);
         }
         catch
         {
@@ -57,7 +65,7 @@ public sealed class OrcaBloodScabbard : OrcaCard
         //      ① 一个键缺失就整条崩，不存在"只坏那一处"的中间状态；
         //      ② 核对必须按【本卡类自己声明了什么】，不能全工程搜字符串 ——
         //         那样会被别的卡的声明骗过（`Percent` 在栖途里声明过，于是血焰剑鞘被误判为 OK）。
-        description.Add(new DynamicVar("Percent", (decimal)_percent));
+        description.Add(new DynamicVar("Percent", (decimal)CurrentPercent));
     }
 
     public override OrcaOrbForm OrbForm => OrcaOrbForm.Sword;
@@ -67,7 +75,7 @@ public sealed class OrcaBloodScabbard : OrcaCard
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
         var me = Owner.Creature;
-        int loss = (int)Math.Floor(me.CurrentHp * _percent / 100.0);
+        int loss = (int)Math.Floor(me.CurrentHp * CurrentPercent / 100.0m);
         if (loss <= 0)
         {
             Log.Info("[Orca] 血焰剑鞘：当前生命过低，无可消耗", 2);
@@ -75,7 +83,7 @@ public sealed class OrcaBloodScabbard : OrcaCard
         }
 
         await CreatureCmd.SetCurrentHp(me, me.CurrentHp - loss);
-        Log.Info($"[Orca] 血焰剑鞘：失去 {loss} 点生命（{_percent}%）", 2);
+        Log.Info($"[Orca] 血焰剑鞘：失去 {loss} 点生命（{CurrentPercent}%）", 2);
 
         // 把失去的生命**全额**附加给战斗中的每一张【嗜血龙剑】
         var swords = Owner.PlayerCombatState?.AllCards?.OfType<OrcaBloodSword>().ToList() ?? new List<OrcaBloodSword>();
@@ -89,7 +97,7 @@ public sealed class OrcaBloodScabbard : OrcaCard
                  + $"（现有附加 {swords[0].Bonus}）", 2);
     }
 
-    protected override void OnUpgrade() => _percent = 20;
+    // 敲后的变化（20% → 30%）由 CurrentPercent 按 IsUpgraded 派生 ⇒ 不需要额外 override。
 }
 
 /// <summary>

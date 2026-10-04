@@ -141,10 +141,11 @@ public sealed class OrcaRuinBurn : OrcaCard
 }
 
 /// <summary>
-///     ★ 卷焰斩（1 费 · **无色（不变形态）** · **攻击牌** · 白卡 Common · **全体敌人**）。
+///     ★ 卷焰斩（2 费 · **无色（不变形态）** · **攻击牌** · 白卡 Common · **全体敌人**）。
 ///
-///     <para>用户口径：<i>"对所有敌人造成 4 点伤害并附加 3 层【焚烧】；**若此牌被消耗，则立刻打出一次**"</i>；
-///     敲后 <i>"7 攻 5 焚烧"</i>。</para>
+///     <para>权威口径（<c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> L20-23）：
+///     <i>"2费，无色，白卡，攻击牌，敲后7攻8【焚烧】 / 对所有敌人造成 **5** 点伤害并附加 **6** 层【焚烧】 /
+///     **若此牌被消耗，则立刻打出一次**"</i>。</para>
 ///
 ///     <para>「焚烧」= <see cref="OrcaBurnPower" />（敌方回合结束时炸开，波及其它带焚烧的敌人）。</para>
 ///
@@ -154,8 +155,22 @@ public sealed class OrcaRuinBurn : OrcaCard
 /// </summary>
 public sealed class OrcaRollingFlame : OrcaCard
 {
-    /// <summary>焚烧层数：3 → 敲后 5。</summary>
-    private int _burn = 3;
+    /// <summary>基础【焚烧】层数。</summary>
+    private const int BaseBurnStacks = 6;          // 权威：6 层（卡牌说明2.txt L22「附加6层【焚烧】」）
+
+    /// <summary>敲后【焚烧】层数。</summary>
+    private const int UpgradedBurnStacks = 8;      // 权威：8 层（卡牌说明2.txt L21「敲后7攻8【焚烧】」）
+
+    /// <summary>基础伤害。</summary>
+    private const decimal BaseDamage = 5m;         // 权威：5 点（卡牌说明2.txt L22「造成5点伤害」）
+
+    /// <summary>敲后伤害增量。</summary>
+    private const decimal UpgradedDamageBonus = 2m;  // 权威：敲后 7 攻（卡牌说明2.txt L21）⇒ 5 + 2 = 7
+
+    /// <summary>当前【焚烧】层数（敲后 8，否则 6）—— 结算、卡面、日志共用此口径。
+    /// ★ 照 <see cref="OrcaHomestead" /> 的 <c>CurrentPercent</c> 写法：由 <c>IsUpgraded</c> 派生，
+    /// 不再用可变字段 + <c>OnUpgrade</c> 赋值（那样同一个值有两个写入点）。</summary>
+    private int Burn => IsUpgraded ? UpgradedBurnStacks : BaseBurnStacks;
 
     /// <summary>
     ///     ⚠️ 防重入闸门：本牌"被消耗 ⇒ 再打出一次"若不加锁，
@@ -169,12 +184,12 @@ public sealed class OrcaRollingFlame : OrcaCard
     /// <summary>2 费 · Attack · Common · AllEnemies　（按卡牌说明2.txt：2费）。</summary>
     public OrcaRollingFlame() : base(2, (CardType)1, (CardRarity)2, (TargetType)3) { }
 
-    protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new DamageVar(4m, (ValueProp)8) };
+    protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new DamageVar(BaseDamage, (ValueProp)8) };
 
-    /// <summary>焚烧层数是普通字段 ⇒ 必须注入成动态变量，卡面才会跟着升级变。
+    /// <summary>焚烧层数由 <c>IsUpgraded</c> 派生 ⇒ 注入成动态变量，卡面才会跟着升级变。
     /// ★ 2026-10-04 修复：原用裸值 ⇒ `No suitable Formatter` ⇒ 整条卡面回退成原文。</summary>
     protected override void AddExtraArgsToDescription(LocString description) =>
-        description.Add(new DynamicVar("Burn", (decimal)_burn));
+        description.Add(new DynamicVar("Burn", (decimal)Burn));
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
@@ -195,15 +210,15 @@ public sealed class OrcaRollingFlame : OrcaCard
         int hit = 0;
         foreach (var enemy in combat.Enemies.Where(e => !e.IsDead).ToList())
         {
-            await PowerCmd.Apply<OrcaBurnPower>(ctx, enemy, _burn, Owner.Creature, this);
+            await PowerCmd.Apply<OrcaBurnPower>(ctx, enemy, Burn, Owner.Creature, this);
             hit++;
         }
 
-        Log.Info($"[Orca] 卷焰斩：对 {hit} 个敌人各造成 {DynamicVars.Damage.BaseValue} 点伤害 + {_burn} 层焚烧", 2);
+        Log.Info($"[Orca] 卷焰斩：对 {hit} 个敌人各造成 {DynamicVars.Damage.BaseValue} 点伤害 + {Burn} 层焚烧", 2);
     }
 
     /// <summary>
-    ///     ★ **若此牌被消耗 ⇒ 立刻打出一次**（用户口径）。
+    ///     ★ **若此牌被消耗 ⇒ 立刻打出一次**（权威：卡牌说明2.txt L23）。
     ///     挂点与狂躁的兜底钩子相同：<c>CardCmd.Exhaust</c> 里的 <c>Hook.AfterCardExhausted</c>。
     /// </summary>
     public override async Task AfterCardExhausted(
@@ -229,12 +244,9 @@ public sealed class OrcaRollingFlame : OrcaCard
         }
     }
 
-    /// <summary>敲后：伤害 4 → **7**，焚烧 3 → **5** 层。</summary>
-    protected override void OnUpgrade()
-    {
-        DynamicVars.Damage.UpgradeValueBy(3m);
-        _burn = 5;
-    }
+    /// <summary>敲后：伤害 5 → **7**（见 <c>UpgradedDamageBonus</c>）。
+    /// 焚烧 6 → **8** 层由 <c>Burn</c> 按 <c>IsUpgraded</c> 自动派生 ⇒ 此处不再赋值。</summary>
+    protected override void OnUpgrade() => DynamicVars.Damage.UpgradeValueBy(UpgradedDamageBonus);
 }
 
 /// <summary>

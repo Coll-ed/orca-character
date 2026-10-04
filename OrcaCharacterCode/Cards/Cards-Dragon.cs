@@ -189,22 +189,29 @@ public sealed class OrcaNirvanaGrasp : OrcaCard
 }
 
 /// <summary>
-///     ★ 践踏（1 费 · 银龙 · **攻击牌** · 蓝卡 Uncommon · 消耗；敲后**去掉消耗**）。
+///     ★ 践踏（1 费 · **无色（不变形态）** · **攻击牌** · 白卡 Common · 消耗；敲后**去掉消耗**）。
 ///
-///     <para>用户口径：<i>"对所有敌人造成 8 点伤害，并附加 1 层虚弱"</i>。</para>
+///     <para>权威口径（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L37-39）：
+///     <i>"1费，无色，攻击牌，白卡，消耗，敲后去消耗 / 对所有敌人造成 **6** 点伤害，并附加 **2** 层【焚烧】"</i>。
+///     ⚠️ 「无色」按 <c>work/奥卡卡包集/备注.txt</c> L1 = <b>不会改变形态的卡牌</b> ⇒ <see cref="OrcaOrbForm.None" />。</para>
+///
 ///     <para>★ 这是本批**两张攻击牌之一** —— 商店固定要 2 张 Attack，
 ///     之前池子里只有 Basic 的「打击」被排除在外，正是商店报错的根因。</para>
 /// </summary>
 public sealed class OrcaTrample : OrcaCard
 {
-    public override OrcaOrbForm OrbForm => OrcaOrbForm.Dragon;
+    /// <summary>★ 无色 = **不改变**能量球形态（权威 L38「无色」；定义见 备注.txt L1）。</summary>
+    public override OrcaOrbForm OrbForm => OrcaOrbForm.None;
 
     public OrcaTrample() : base(1, (CardType)1, (CardRarity)2, (TargetType)3) { }   // 1 费 · Attack · Common · AllEnemies　（按卡牌说明1.txt：白卡）
 
-    protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new DamageVar(8m, (ValueProp)8) };
+    /// <summary>践踏的伤害值。</summary>
+    private const decimal TrampleDamage = 6m;   // 权威：6 点（卡牌说明1.txt L39「对所有敌人造成6点伤害」）
+
+    protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new DamageVar(TrampleDamage, (ValueProp)8) };
 
     /// <summary>
-    ///     践踏附加的【焚烧】层数。规格（卡牌说明1.txt）：「对所有敌人造成 6 点伤害，并附加 **2 层【焚烧】**」，
+    ///     践踏附加的【焚烧】层数。权威（卡牌说明1.txt L39）：「对所有敌人造成 6 点伤害，并附加 **2 层【焚烧】**」，
     ///     且敲后只「去消耗」、不改层数 ⇒ 固定 2 层。
     /// </summary>
     private const int BurnStacks = 2;

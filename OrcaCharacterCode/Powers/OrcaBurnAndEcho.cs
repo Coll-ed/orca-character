@@ -55,7 +55,7 @@ public sealed class OrcaBurnPower : PowerModel
             if (burning[0] != Owner) return;
 
             // 回合结束的结算 = 触发一次并**消耗层数**
-            await Burst(choiceContext, consumeStacks: true, why: "回合结束");
+            await Burst(choiceContext, combat, consumeStacks: true, why: "回合结束");
         }
         catch (Exception ex)
         {
@@ -76,6 +76,10 @@ public sealed class OrcaBurnPower : PowerModel
     /// <returns>本次触发的"炸开"个数（0 = 场上没有焚烧）。</returns>
     internal static async Task<int> TriggerAllNow(PlayerChoiceContext ctx)
     {
+        // ⚠️ 取战斗状态用 DebugOnlyGetState —— 红莲淬在**玩家回合内**打出，它此时就是当前战斗状态 ✓
+        //    （实据：ilspy 反编译 sts2.dll，CombatManager 里**没有**公开的 State 属性，
+        //      只有 StateTracker（其内部状态不公开）与这个方法。）
+        //    ⚠️ 边界显式：拿不到就如实报"不在战斗中"，不静默 return。
         var combat = CombatManager.Instance.DebugOnlyGetState();
         if (combat == null)
         {
@@ -91,7 +95,7 @@ public sealed class OrcaBurnPower : PowerModel
             return 0;
         }
 
-        await Burst(ctx, consumeStacks: false, why: "红莲淬");
+        await Burst(ctx, combat, consumeStacks: false, why: "红莲淬");
         Log.Info($"[Orca] 红莲淬：立刻触发 {n} 个【焚烧】（不消耗层数）", 2);
         return n;
     }
@@ -107,11 +111,16 @@ public sealed class OrcaBurnPower : PowerModel
     ///     <para><paramref name="consumeStacks" /> = <c>true</c> 用于回合结束（消耗层数），
     ///     <c>false</c> 用于红莲淬（无消耗触发）。</para>
     /// </summary>
-    private static async Task Burst(PlayerChoiceContext choiceContext, bool consumeStacks, string why)
+    /// <param name="choiceContext">选择上下文。</param>
+    /// <param name="combat">战斗状态（由调用方给 —— 回合结束那条路用 <c>Owner.CombatState</c>）。</param>
+    /// <param name="consumeStacks"><c>true</c> 用于回合结束（消耗层数），<c>false</c> 用于红莲淬（无消耗触发）。</param>
+    /// <param name="why">日志里的触发来源。</param>
+    private static async Task Burst(
+        PlayerChoiceContext choiceContext,
+        ICombatState combat,
+        bool consumeStacks,
+        string why)
     {
-        var combat = BurnAnchor;
-        if (combat == null) return;
-
         List<Creature> burning = combat.GetCreaturesOnSide(CombatSide.Enemy)
             .Where(c => !c.IsDead && (c.GetPower<OrcaBurnPower>()?.Amount ?? 0) > 0)
             .ToList();
@@ -124,10 +133,14 @@ public sealed class OrcaBurnPower : PowerModel
             .ToList();
         if (snapshot.Count == 0) return;
 
-        // ★ A3（2026-10-01）：【生死一线】（熔渊枯骨）—— 口径原文见 OrcaPowers2.cs L134-135：
+        // ★ A3（2026-10-01）：【生死一线】（熔渊枯骨）—— 口径原文见 OrcaPowers2.cs L143-151：
         //   "你造成的【焚烧】每次触发只消耗 50% 层数，【焚烧】现在变成对场上所有人（包括奥卡）造成伤害"
-        //   谓词用现成的 OrcaMoltenBonePower.IsActive(Creature?) ✓（它收到的是 Creature ✓）
-        bool molten = false; /*TOGGLE-OFF-A3：判据暂时短路，验完恢复*/
+        //   ★ 2026-10-04 恢复真判据（原来是 /*TOGGLE-OFF-A3*/ bool molten = false; 硬编码短路
+        //     ⇒ 熔渊枯骨永远不生效，而 OrcaMoltenBonePower.IsActive 全工程只有定义、无调用点）。
+        //   判据来源 = 现成的 OrcaMoltenBonePower.IsActive(Creature?)（单一来源，不另写一份判断）。
+        //   ⚠️ 只认**玩家自己**身上有没有这个 Power：权威写的是"**你造成的**【焚烧】"，
+        //      若按"场上任意生物"取，联机里任一玩家带【生死一线】就会改写所有人的焚烧结算。
+        bool molten = OrcaMoltenBonePower.IsActive(combat.PlayerCreatures.FirstOrDefault());
         if (molten) Log.Info("[Orca] 焚烧结算：【生死一线】生效 ⇒ 只消耗 50% 层数 + 波及场上所有人（含奥卡）", 2);
 
         // ② 消耗层数（红莲淬走"无消耗"⇒ 整段跳过）
@@ -158,9 +171,13 @@ public sealed class OrcaBurnPower : PowerModel
             List<Creature> alive;
             if (molten)
             {
-                // 口径："对场上所有人（包括奥卡）造成伤害" ⇒ 双方所有存活单位 ✓
+                // 口径："对场上所有人（包括奥卡）造成伤害" ⇒ 敌方全部存活单位 + 玩家侧全部存活单位。
+                // ★ 用 ICombatState.PlayerCreatures（实据：ilspy 反编译 sts2.dll，
+                //   ICombatState 属性 "Get all the player creatures in the combat."）
+                //   而不是 GetCreaturesOnSide(CombatSide.Player) —— 后者是**按侧**取，
+                //   多玩家时会把队友算进去；权威说的是"场上所有人（包括奥卡）"。
                 alive = combat.GetCreaturesOnSide(CombatSide.Enemy)
-                    .Concat(combat.GetCreaturesOnSide(CombatSide.Player))
+                    .Concat(combat.PlayerCreatures)
                     .Where(c => !c.IsDead).ToList();
             }
             else
@@ -185,15 +202,6 @@ public sealed class OrcaBurnPower : PowerModel
             Log.Info($"[Orca] 焚烧结算（{why}）：{src.Name} 的 {stacks} 层炸开 → 波及 {alive.Count} 个带焚烧的敌人", 2);
         }
     }
-
-    /// <summary>
-    ///     触发器锚点：<see cref="Burst" /> 是静态方法，但需要 <c>CombatState</c>。</summary>
-    /// <remarks>
-    ///     ⚠️ 用静态入口时的取法：红莲淬在**玩家回合内**打出，此时
-    ///     <c>CombatManager.Instance.DebugOnlyGetState()</c> 就是当前战斗状态 ✓
-    ///     （回合结束那条路不走这里，它用 <c>Owner.CombatState</c> —— 已内联在调用处。）
-    /// </remarks>
-    private static ICombatState? BurnAnchor => CombatManager.Instance.DebugOnlyGetState();
 }
 
 /// <summary>

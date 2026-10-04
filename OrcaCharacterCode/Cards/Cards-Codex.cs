@@ -34,7 +34,15 @@ public sealed class OrcaCodexIgnition : OrcaCard
 
     public OrcaCodexIgnition() : base(1, (CardType)2, (CardRarity)4, (TargetType)1) { }  // 1 费 · Skill · Rare · Self
 
-    public override IEnumerable<CardKeyword> CanonicalKeywords => new[] { CardKeyword.Exhaust };
+    /// <summary>
+    ///     权威口径（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L2）：「1能量，魔典，技能，**消耗**，金卡，**敲后去消耗**」。
+    ///
+    ///     <para>实现方式照 <see cref="OrcaCrimsonTemper" />（本工程既有做法）：用**动态关键词**
+    ///     而不是在 <c>OnUpgrade</c> 里加词条 —— 敲后返回空集即等于"去掉消耗"，
+    ///     不需要引擎提供"移除关键词"的 API。</para>
+    /// </summary>
+    public override IEnumerable<CardKeyword> CanonicalKeywords
+        => IsUpgraded ? Array.Empty<CardKeyword>() : new[] { CardKeyword.Exhaust };
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
@@ -61,9 +69,6 @@ public sealed class OrcaCodexIgnition : OrcaCard
         Log.Info("[Orca] 焚卷入典：获得 1 层【回响】⇒ 下次龙族魔典额外打出 1 次", 2);
     }
 
-    /// <summary>敲后 1 费 → **0 费**。</summary>
-    protected override void OnUpgrade() => EnergyCost.UpgradeBy(-1);
-
     private static LocString IgnitionPrompt
     {
         get
@@ -80,20 +85,27 @@ public sealed class OrcaCodexIgnition : OrcaCard
             }
         }
     }
+
+    // 敲后的变化（去掉【消耗】）由上面的 CanonicalKeywords 动态表达（照 OrcaCrimsonTemper）
+    // ⇒ 不需要额外 override。原实现是 EnergyCost.UpgradeBy(-1)（1 费 → 0 费），
+    //    与权威「敲后去消耗」不符，已按审计建议删除该降费。
 }
 
 /// <summary>
-///     ★ 焚文（2 费 → 敲后 **1 费** · 魔典 · **能力牌 Power** · 蓝卡 Uncommon）。
+///     ★ 焚文（1 费 · 魔典 · **能力牌 Power** · 蓝卡 Uncommon · **敲后固有**）。
 ///
-///     <para>用户口径：<i>"获得 50% 额外治疗加成，若消耗卡牌还会获得额外 5% 的治疗加成于本回合"</i>；
-///     追问后确认：**50% 常驻整场；每次消耗卡牌 +5%，只到本回合结束**。</para>
+///     <para>权威口径（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L5-7）：
+///     <i>"1能量，魔典，能力牌，蓝卡，**敲后固有** /
+///     获得 **20%** 额外治疗加成，消耗卡牌获得 **10%** 的治疗加成于本场战斗"</i>。</para>
+///
+///     <para>★ 敲后 **固有** 走 <c>CardCmd.ApplyKeyword(Innate)</c>；原先的"敲后降 1 费"与权威不符，已删除。</para>
 ///
 ///     <para>★ 这是本批两张**能力牌**之一 —— 商店固定要 1 张 Power，正好补位。</para>
 /// </summary>
 public sealed class OrcaCodexEmber : OrcaCard
 {
     /// <summary>常驻治疗加成（%）。</summary>
-    private const int BasePercent = 50;
+    private const int PersistentHealPercent = 20;   // 权威：20%（卡牌说明1.txt L7「获得20%额外治疗加成」）
 
     public override OrcaOrbForm OrbForm => OrcaOrbForm.Codex;
 
@@ -101,19 +113,37 @@ public sealed class OrcaCodexEmber : OrcaCard
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
-        await PowerCmd.Apply<OrcaHealBonusPower>(ctx, Owner.Creature, BasePercent, Owner.Creature, this);
-        Log.Info($"[Orca] 焚文：获得 {BasePercent}% 常驻治疗加成"
-                 + $"（每次消耗卡牌再 +{OrcaHealBonusPower.PerExhaustPercent}%，只到本回合结束）", 2);
+        await PowerCmd.Apply<OrcaHealBonusPower>(ctx, Owner.Creature, PersistentHealPercent, Owner.Creature, this);
+        Log.Info($"[Orca] 焚文：获得 {PersistentHealPercent}% 常驻治疗加成"
+                 + $"（每次消耗卡牌再 +{OrcaHealBonusPower.PerExhaustPercent}%，累计到本场战斗结束）", 2);
     }
 
-    /// <summary>敲后 2 费 → **1 费**。</summary>
-    protected override void OnUpgrade() => EnergyCost.UpgradeBy(-1);
+    /// <summary>
+    ///     卡面数值注入 —— 权威 L7 的两个百分比都不再写死在 <c>cards.json</c> 里：
+    ///     <list type="bullet">
+    ///       <item><c>Percent</c> = 常驻加成 ← <see cref="PersistentHealPercent" />（单一来源：卡牌自己）；</item>
+    ///       <item><c>PerExhaust</c> = 每烧一张的追加 ← <see cref="OrcaHealBonusPower.PerExhaustPercent" />
+    ///         （单一来源：Power 自己，卡牌不复制这个值）。</item>
+    ///     </list>
+    /// </summary>
+    protected override void AddExtraArgsToDescription(LocString description)
+    {
+        description.Add(new DynamicVar("Percent", (decimal)PersistentHealPercent));
+        description.Add(new DynamicVar("PerExhaust", (decimal)OrcaHealBonusPower.PerExhaustPercent));
+    }
+
+    /// <summary>敲后带**固有**（权威 L6「敲后固有」；不再改费用）。</summary>
+    protected override void OnUpgrade() => CardCmd.ApplyKeyword(this, new[] { CardKeyword.Innate });
 }
 
 /// <summary>
-///     ★ 逐焰（1 费 · 魔典 · **攻击牌** · 白卡 Common）。
+///     ★ 逐焰（1 费 · **无色（不变形态）** · **攻击牌** · 白卡 Common）。
 ///
-///     <para>用户口径：<i>"对一名敌人造成 5 点伤害并挂上 2 层焚烧效果"</i>，敲后 <i>"8 点伤害 5 层焚烧"</i>。</para>
+///     <para>权威口径（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L41-43）：
+///     <i>"1费，无色，攻击牌，白卡，敲后8点伤害5层焚烧效果 /
+///     对一名敌人造成 **5** 点伤害并挂上 **2** 层【焚烧】效果"</i>。
+///     ⚠️ 「无色」按 <c>work/奥卡卡包集/备注.txt</c> L1 = <b>不会改变形态的卡牌</b> ⇒ <see cref="OrcaOrbForm.None" />。</para>
+///
 ///     <para>「焚烧」= <see cref="OrcaBurnPower" />（敌方回合结束时炸开，波及其它带焚烧的敌人）。</para>
 /// </summary>
 public sealed class OrcaEmberChase : OrcaCard
@@ -121,7 +151,8 @@ public sealed class OrcaEmberChase : OrcaCard
     /// <summary>焚烧层数：2 → 敲后 5。</summary>
     private int _burn = 2;
 
-    public override OrcaOrbForm OrbForm => OrcaOrbForm.Codex;
+    /// <summary>★ 无色 = **不改变**能量球形态（权威 L42「无色」；定义见 备注.txt L1）。</summary>
+    public override OrcaOrbForm OrbForm => OrcaOrbForm.None;
 
     public OrcaEmberChase() : base(1, (CardType)1, (CardRarity)2, (TargetType)2) { }   // 1 费 · Attack · Common · AnyEnemy
 

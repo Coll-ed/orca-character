@@ -12,7 +12,7 @@
   "ORCA_BLOOD_SWORD.state.description": "主动打出：失去 {LifePercent:diff()}%（{HpLoss:diff()}血）最大生命，获得 {Gain:diff()} 点伤害附加。\n已累计伤害附加：{Bonus:diff()}。\n被狂躁打出：对所有敌人造成 {Bonus:diff()} 点伤害。",
   "ORCA_BLOOD_SWORD.state.title": "当前战况",
   "ORCA_BLOOD_SWORD.title": "嗜血龙剑",
-  "ORCA_CODEX_EMBER.description": "获得 20% 生命回复效率；每消耗一张牌，本场战斗再获得 10%。",
+  "ORCA_CODEX_EMBER.description": "获得{Percent:diff()}%生命回复效率；每消耗一张牌，本场战斗再获得{PerExhaust:diff()}%。",
   "ORCA_CODEX_EMBER.title": "焚文",
   "ORCA_CODEX_IGNITION.description": "消耗 1 张手牌，使下次的[gold]龙族魔典[/gold]打出次数额外加 1。",
   "ORCA_CODEX_IGNITION.pick": "选择一张牌消耗",

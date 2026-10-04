@@ -57,8 +57,26 @@ internal static class OrcaPack2Acquisition
             //       CardModel card = owner.RunState.CreateCard(curse, owner);
             //       results.Add(await Add(card, PileType.Deck));          ← ★ 这一句才真正入牌组 ✓
             var added = player.RunState.CreateCard(card, player);
-            /*TOGGLE-OFF-A4*/ await Task.CompletedTask; // await CardPileCmd.Add(added, PileType.Deck);
-            OrcaLog.Info($"[Orca] {reason} ⇒ 获得卡牌【{card.Title}】（已入牌堆，牌组现有 {player.Deck?.Cards.Count() ?? -1} 张）", 2);
+            // ★ 2026-10-04 恢复（原被 /*TOGGLE-OFF-A4*/ 注释成 await Task.CompletedTask）：
+            //   这一句才真正把卡放进牌组。关掉它的后果是栖途**永远进不了牌组**
+            //   （权威「选取遗物-欧洛巴斯之触会获得这张卡牌」不兑现），且下面的去重判断永远为假。
+            var result = await CardPileCmd.Add(added, PileType.Deck);
+
+            // ★ 边界显式：只在**真的入牌组**时才报成功，不再无条件输出"（已入牌堆…）"。
+            //   CardPileAddResult.success 实据（ilspy 反编译 sts2.dll，struct CardPileAddResult）：
+            //     public bool success;   —— "Whether we were successful in adding the card to a pile."
+            int deckCount = player.Deck?.Cards.Count() ?? -1;
+            if (result.success)
+            {
+                OrcaLog.Info($"[Orca] {reason} ⇒ 获得卡牌【{card.Title}】（已入牌堆，牌组现有 {deckCount} 张）", 2);
+            }
+            else
+            {
+                // 失败原因也记下来（旧牌堆 / 目标堆），不静默吞掉
+                OrcaLog.Warn($"[Orca] {reason} ⇒ 卡牌【{card.Title}】**未能**入牌堆"
+                             + $"（success=false，目标堆={result.targetPile}，原堆={result.oldPile?.Type.ToString() ?? "（无）"}，"
+                             + $"牌组现有 {deckCount} 张）", 2);
+            }
         }
         catch (Exception ex)
         {
