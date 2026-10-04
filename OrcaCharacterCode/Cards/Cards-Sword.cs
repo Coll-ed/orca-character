@@ -211,23 +211,30 @@ public sealed class OrcaFrenzySlash : OrcaCard
         Log.Info($"[Orca] 狂热斩击：消耗了手牌中 {attacks.Count} 张攻击牌", 2);
 
         // ② 不论何处，把【嗜血龙剑】召唤到手里（照 SummonForth 的写法）
-        var swords = state.AllCards.OfType<OrcaBloodSword>()
+        // ★ 2026-10-05 扩到**两种剑**：权威卡牌说明1.txt「狂热斩击」写的是
+        //   "对敌方全体打出卡组中狂躁的【嗜血魔剑】"，而**魔剑是龙剑的先古升级版**
+        //   （用户口径 2026-10-05；映射见 OrcaAncientToothPatch：
+        //    OrcaBloodSword → OrcaBloodBlade，原版遗物「古老牙齿」触发）。
+        //   原先只找 <c>OrcaBloodSword</c> ⇒ 玩家用古老牙齿升成魔剑后**一个字都找不到，
+        //   本牌直接打空**。现在按"打出你携带的那把剑"取（未升级时是龙剑、升级后是魔剑）。
+        var swords = state.AllCards
+            .Where(c => c is OrcaBloodSword or OrcaBloodBlade)
             .Where(c => c.Pile == null || c.Pile.Type != PileType.Hand)
             .ToList();
         if (swords.Count == 0)
         {
-            Log.Warn("[Orca] 狂热斩击：牌堆里没有可召唤的【嗜血龙剑】", 2);
+            Log.Warn("[Orca] 狂热斩击：牌堆里没有可召唤的【嗜血龙剑】/【嗜血魔剑】", 2);
             return;
         }
         await CardPileCmd.Add(swords, PileType.Hand);
-        Log.Info($"[Orca] 狂热斩击：把 {swords.Count} 张【嗜血龙剑】召唤到手牌", 2);
+        Log.Info($"[Orca] 狂热斩击：把 {swords.Count} 张剑（{string.Join("、", swords.Select(s => s.Id.Entry))}）召唤到手牌", 2);
 
-        // ③ 以**狂躁方式**直接打出（AutoPlay ⇒ IsAutoPlay = true ⇒ 龙剑走 FrenzyStrike）
+        // ③ 以**狂躁方式**直接打出（AutoPlay ⇒ IsAutoPlay = true ⇒ 两张剑各自的 OnFrenzyPlay 走全体伤害）
         foreach (var sword in swords)
         {
             if (sword.Pile?.Type != PileType.Hand) continue;      // 保险：不在手牌就别打
             await CardCmd.AutoPlay(ctx, sword, null);
-            Log.Info("[Orca] 狂热斩击：以狂躁方式打出【嗜血龙剑】", 2);
+            Log.Info($"[Orca] 狂热斩击：以狂躁方式打出【{sword.Id.Entry}】", 2);
         }
     }
 

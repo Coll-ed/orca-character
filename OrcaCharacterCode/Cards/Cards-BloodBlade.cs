@@ -216,6 +216,19 @@ public sealed class OrcaBloodBlade : OrcaFrenzyCard
 
             Log.Info($"[Orca] 嗜血魔剑·狂躁：对 {aliveEnemies} 个敌人各造成 {damage} 点伤害（附加 {_bonus}）", 2);
 
+            // ★ 击杀敌人 +生命上限（权威卡牌说明1.txt「嗜血魔剑」末行，逐字）：
+            //   "击杀敌人+2生命上限，击杀精英+3生命上限，击杀BOSS＋５生命上限"
+            //   ⇒ **分档按房间档位**，档位与数值的单一来源是 OrcaKillReward（本实现原先漏了这条）。
+            var kills = attack.Results.SelectMany(r => r).Count(r => r.WasTargetKilled);
+            if (kills > 0)
+            {
+                int perKill = OrcaKillReward.MaxHpFor(Owner);
+                int gain = kills * perKill;
+                await CreatureCmd.GainMaxHp(Owner.Creature, gain);
+                Log.Info($"[Orca] 嗜血魔剑击杀 {kills} 个敌人 → 生命上限 +{gain}"
+                         + $"（{OrcaKillReward.Describe(Owner)}，每个 +{perKill}）", 2);
+            }
+
             // ★ 只对一名敌人造成伤害 ⇒ 恢复（该敌人受到的生命伤害）点生命
             if (soleTarget != null)
                 await HealFromSingleTarget(ctx, Math.Max(0, hpBefore - soleTarget.CurrentHp));
