@@ -183,6 +183,7 @@ internal static class OrcaSkinPanel
 
             EnsurePreview();
             ApplyPreviewSkin();
+            EnsureOnScreen();          // ★ 每轮刷新都兜一次：坏存档/改分辨率/改窗口大小都会被拉回屏内
         }
         catch (Exception ex)
         {
@@ -318,13 +319,15 @@ internal static class OrcaSkinPanel
                     else if (_dragging)
                     {
                         _dragging = false;
+                        EnsureOnScreen();          // 松手前先夹回屏内，绝不把屏幕外坐标写进存档
                         SaveState();
                     }
                 }
             }
             else if (@event is InputEventMouseMotion motion && _dragging)
             {
-                panel.Position += motion.Relative;
+                // 拖动中也夹：面板到边缘就停住，**根本出不去**（上一版就是在这里跑出屏幕的）
+                panel.Position = ClampToViewport(panel, panel.Position + motion.Relative);
             }
         }
         catch (Exception ex)
@@ -357,8 +360,44 @@ internal static class OrcaSkinPanel
     private static void ApplySavedPlacement(Control panel, Vector2 pos)
     {
         panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-        panel.Position = pos;
+        panel.Position = ClampToViewport(panel, pos);
         _positionIsCustom = true;
+    }
+
+    /// <summary>
+    ///     把想放的位置**夹进屏幕内**（硬边界，任何来源都要过这道）。
+    ///
+    ///     <para>★★ 2026-10-05 加（用户实测：「没有显示，是不是上次我拖一下直接消失了，记录了坐标？
+    ///     我是不是丢到屏幕外面去了」——**用户判断完全正确**）：
+    ///     上一版拖动有 bug（换锚点却保留右下角偏移 ⇒ 坐标变负、面板飞出屏幕），
+    ///     而它**松手时把那个屏幕外坐标存进了 <c>panel.json</c>**
+    ///     （实测存档值 <c>{"x":-788.75,"y":-488.25}</c>）⇒ 拖动修好之后，
+    ///     新代码又把坏坐标**忠实地读了回来**，面板就再也不出现。
+    ///     ⇒ 位置必须有硬边界：**存档 / 拖动 / 缩放**落到的坐标一律先夹进视口，
+    ///     于是即便历史存档是坏的，也会被自动拉回屏内。</para>
+    /// </summary>
+    private static Vector2 ClampToViewport(Control panel, Vector2 desired)
+    {
+        var size = panel.Size;
+        if (size.X <= 0f || size.Y <= 0f) return desired;    // 还没排版 ⇒ 算不出来，原样返回（下次再夹）
+
+        var view = panel.GetViewportRect().Size;
+        var scaled = size * _zoom;
+
+        // 缩放以面板中心为支点（PivotOffset = Size/2）⇒ 视觉左上角 = Position + (Size − scaled)/2
+        var shift = (size - scaled) / 2f;
+        var visual = desired + shift;
+
+        var maxX = Mathf.Max(0f, view.X - scaled.X);
+        var maxY = Mathf.Max(0f, view.Y - scaled.Y);
+        return new Vector2(Mathf.Clamp(visual.X, 0f, maxX), Mathf.Clamp(visual.Y, 0f, maxY)) - shift;
+    }
+
+    /// <summary>把面板拉回屏内（当前坐标不合法时才有变化；拖动中不干预，避免和手指打架）。</summary>
+    private static void EnsureOnScreen()
+    {
+        if (_panel == null || _dragging) return;
+        _panel.Position = ClampToViewport(_panel, _panel.Position);
     }
 
     // ── 缩放（整个面板）────────────────────────────────────────────────────
@@ -390,6 +429,7 @@ internal static class OrcaSkinPanel
 
         _zoom = next;
         ApplyZoom();
+        EnsureOnScreen();                // 放大后可能超出屏幕 ⇒ 立刻夹回来
         SaveState();
         OrcaLog.Info($"[Orca] 皮肤面板缩放 → {_zoom:F1}×（范围 {ZoomMin:F1}–{ZoomMax:F1}）", 2);
     }
