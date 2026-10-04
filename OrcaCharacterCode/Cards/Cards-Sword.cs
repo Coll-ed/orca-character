@@ -95,12 +95,20 @@ public sealed class OrcaBloodScabbard : OrcaCard
 /// <summary>
 ///     ★ 红莲淬（1 费 · 魔剑 · **能力牌 Power** · 金卡 Rare；敲后追加**固有**）。
 ///
-///     <para>用户口径：<i>"每次消耗卡牌时，提升下次【嗜血魔剑】造成伤害的 0.1 倍"</i>。</para>
+///     <para>⚠️⚠️ <b>2026-10-04：本卡与权威口径不符，当前是【空卡】，待实现。</b></para>
 ///
-///     <para>实现：<see cref="OrcaCrimsonTemperPower" /> 挂在玩家身上，每次**消耗卡牌**累加一档；
-///     伤害倍率 = <c>1 + 0.1 × 次数</c>，由【嗜血魔剑】在结算时读取并**消费**（清零）。</para>
+///     <para><b>权威口径</b>（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c>）：
+///     <i>"红莲淬 / 1费，无色，技能牌，金卡，消耗，敲后去消耗 /
+///     将当前场上所有存在的【焚烧】立刻无消耗触发一次"</i></para>
 ///
-///     <para>★ 本批第二张**能力牌**。</para>
+///     <para><b>旧实现</b>（本文件下面那个 <c>OrcaCrimsonTemperPower</c>，已按用户裁定"彻底断开"拆除）：
+///     挂一个 Power，每次**消耗卡牌**累加一档，倍率 <c>1 + 0.1 × 档数</c>，由【嗜血魔剑】结算时读取并清零。
+///     用户原话：<i>"红莲强化魔剑都是很久之前的初版"</i> ⇒ 该联动已从魔剑侧删除，
+///     本 Power 的倍率机制随之**没有任何消费者**，故一并拆除。</para>
+///
+///     <para>⇒ <b>待实现</b>：遍历战斗中所有生物的 <see cref="OrcaBurnPower" />，
+///     各**无消耗地触发一次**其回合结束伤害（即不扣层数地结算一次焚烧）。
+///     注意权威还写了「无色」「消耗」「敲后去消耗」三个词条 —— 现在这三点也没实现。</para>
 /// </summary>
 public sealed class OrcaCrimsonTemper : OrcaCard
 {
@@ -110,63 +118,29 @@ public sealed class OrcaCrimsonTemper : OrcaCard
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
-        await PowerCmd.Apply<OrcaCrimsonTemperPower>(ctx, Owner.Creature, 1m, Owner.Creature, this);
-        Log.Info("[Orca] 红莲淬：本场战斗内，每次消耗卡牌都会提升下次【嗜血魔剑】的伤害倍率", 2);
+        // ⚠️ 旧的倍率联动已拆除（见类注释）。这里**显式记录"尚未实现"**，
+        //    而不是静默留空 —— 打出时日志里能直接看到缺口。
+        OrcaLog.Warn("[Orca] 红莲淬：★ 本卡尚未按权威口径实现"
+                     + "（应为「将场上所有【焚烧】立刻无消耗触发一次」）—— 本次打出不产生效果", 2);
+        await Task.CompletedTask;
     }
 
     protected override void OnUpgrade() => CardCmd.ApplyKeyword(this, CardKeyword.Innate);
 }
 
-/// <summary>
-///     ★ 红莲淬的记账 Power：累计"消耗卡牌"次数，给出【嗜血魔剑】的伤害倍率。
-///
-///     <para><c>Amount</c> 固定为 1（表示"存在"）；真正的档数在 <c>_stacks</c> 里，
-///     并通过 <see cref="DisplayAmount" /> 显示成玩家看得懂的"档数"。</para>
-/// </summary>
-public sealed class OrcaCrimsonTemperPower : PowerModel
-{
-    /// <summary>每档提升的倍率（用户口径：0.1 倍）。</summary>
-    public const decimal PerStack = 0.1m;
-
-    private int _stacks;
-
-    public override PowerType Type => PowerType.Buff;
-
-    public override PowerStackType StackType => PowerStackType.Counter;
-
-    /// <summary>UI 上显示"积累了几档"，而不是内部的 1。</summary>
-    public override int DisplayAmount => _stacks;
-
-    /// <summary>【嗜血魔剑】下次造成伤害的倍率 = 1 + 0.1 × 档数。</summary>
-    public decimal Multiplier => 1m + PerStack * _stacks;
-
-    /// <summary>每次**消耗卡牌** → 累加一档（用户口径）。</summary>
-    public override Task AfterCardExhausted(
-        PlayerChoiceContext choiceContext,
-        CardModel card,
-        bool causedByEthereal)
-    {
-        try
-        {
-            _stacks++;
-            Log.Info($"[Orca] 红莲淬：消耗 {card.Id.Entry} → 累计 {_stacks} 档，"
-                     + $"下次【嗜血魔剑】伤害 ×{Multiplier:0.0}", 2);
-        }
-        catch (Exception ex)
-        {
-            Log.Warn($"[Orca] 红莲淬·消耗钩子出错：{ex.Message}", 2);
-        }
-        return Task.CompletedTask;
-    }
-
-    /// <summary>被【嗜血魔剑】结算时**消费**（清零）。</summary>
-    internal void Consume()
-    {
-        if (_stacks == 0) return;
-        Log.Info($"[Orca] 红莲淬：倍率 ×{Multiplier:0.0} 已被【嗜血魔剑】消费，档数清零", 2);
-        _stacks = 0;
-    }
-}
+// ── 已删除：OrcaCrimsonTemperPower（红莲淬的"消耗卡牌累加倍率"记账 Power）────────────
+//
+//   2026-10-04 按用户裁定「彻底断开」拆除。它原本做的是：
+//     · PerStack = 0.1 —— 每消耗一张牌累加一档
+//     · Multiplier = 1 + 0.1 × 档数 —— 供【嗜血魔剑】狂躁结算时乘算
+//     · Consume() —— 被魔剑读走之后清零
+//   拆除理由（两条，任一条都足够）：
+//     ① 用户原话：「红莲强化魔剑都是很久之前的初版」⇒ 魔剑侧的乘算与 Consume 调用已删除，
+//        该倍率**再无任何消费者**，留着就是死代码；
+//     ② 它与【权威口径】根本不是同一个效果 —— 权威写的是
+//        「将当前场上所有存在的【焚烧】立刻无消耗触发一次」，与"消耗卡牌累计倍率"毫无关系。
+//   ⇒ 红莲淬整张卡待按权威重写（见 OrcaCrimsonTemper 的类注释里记的"待实现"）。
+//   删除方式：整类移除 + 打出时显式打 WARN 记录"尚未实现"，不留静默空卡。
 
 /// <summary>
 ///     ★ 狂热斩击（3 费 · 魔剑 · 技能 · 蓝卡 Uncommon；**未升级时带虚无**，敲后去掉）。
