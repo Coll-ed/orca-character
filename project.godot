@@ -12,3 +12,10 @@ config/features=PackedStringArray("4.5", "C#")
 [dotnet]
 
 project/assembly_name="OrcaCharacter"
+
+[editor]
+
+; 关闭「文本资源转二进制」。
+; 默认 true 时,导出会把 .tres/.tscn 转成 .res/.scn 并在原路径放一个 .remap,
+; 导致包内结构与官方基准不一致(官方 pck 里是原始 .tres/.tscn)。
+export/convert_text_resources_to_binary=false

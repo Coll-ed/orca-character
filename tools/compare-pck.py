@@ -63,7 +63,7 @@ CATEGORY_IMPACT = {
     "?": "**待查明**",
 }
 REASON_SPINE = "Spine:导出时报 `Cannot get class 'SpineSkeletonDataResource'` —— Spine 支持来自**游戏目录的 GDExtension**(libspine_godot…dll),不是 MegaDot 自带;独立导出拿不到该类"
-REASON_AUDIO = "音频导入产物:源 `.mp3` 尚未还原(与 .ctex 同法可还原)"
+REASON_AUDIO = "游戏本体音效的导入产物(slash_attack / victory / hiss 等通用名,非本 mod 资源):官方构建时因工程目录内含它们而打进包,运行时由游戏本体 pck 提供"
 REASON_IMPORTED = "导入产物:重新导入后哈希名不同,.import 已同步改写 ⇒ 功能等价"
 REASON_EXPORTED = "导出中间产物:源资源依赖游戏自有资源,未能生成"
 REASON_RAW = "原始源文件:官方把源文件也打了包,本工程靠 .import 重映射 ⇒ 冗余"
@@ -92,7 +92,7 @@ def classify(entry: str) -> tuple[str, str]:
     if any(m in entry or m in low for m in SPINE_MARKERS):
         return "B", REASON_SPINE
     if any(m in entry for m in AUDIO_MARKERS):
-        return "D", REASON_AUDIO
+        return "B", REASON_AUDIO
     if entry.startswith(GODOT_IMPORTED_DIR):
         return "A", REASON_IMPORTED
     if entry.startswith(".godot"):
