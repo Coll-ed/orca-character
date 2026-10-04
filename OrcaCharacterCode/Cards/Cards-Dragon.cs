@@ -203,6 +203,21 @@ public sealed class OrcaTrample : OrcaCard
 
     protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new DamageVar(8m, (ValueProp)8) };
 
+    /// <summary>
+    ///     践踏附加的【焚烧】层数。规格（卡牌说明1.txt）：「对所有敌人造成 6 点伤害，并附加 **2 层【焚烧】**」，
+    ///     且敲后只「去消耗」、不改层数 ⇒ 固定 2 层。
+    /// </summary>
+    private const int BurnStacks = 2;
+
+    /// <summary>
+    ///     ★ 2026-10-04 修复：卡面写 <c>{Burn:diff()}</c> 但本卡**从未提供过 Burn 变量**
+    ///     ⇒ SmartFormat 失败 ⇒ 整条卡面回退成原文（用户实测：践踏显示成 {Damage:diff()}）。
+    ///     同时把 <c>WeakPower</c> 改为 <see cref="OrcaBurnPower" /> —— 卡面与规格写的都是【焚烧】，
+    ///     原实现给的是【虚弱】，文案与行为不一致。
+    /// </summary>
+    protected override void AddExtraArgsToDescription(LocString description) =>
+        description.Add(new DynamicVar("Burn", BurnStacks));
+
     public override IEnumerable<CardKeyword> CanonicalKeywords => new[] { CardKeyword.Exhaust };
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
@@ -218,10 +233,11 @@ public sealed class OrcaTrample : OrcaCard
         int hits = 0;
         foreach (var enemy in combat.Enemies.Where(e => !e.IsDead))
         {
-            await PowerCmd.Apply<WeakPower>(ctx, enemy, 1m, Owner.Creature, this);
+            // ★ 2026-10-04：原为 WeakPower（虚弱）1 层 —— 与卡面/规格写的【焚烧】不符，改为焚烧。
+            await PowerCmd.Apply<OrcaBurnPower>(ctx, enemy, BurnStacks, Owner.Creature, this);
             hits++;
         }
-        Log.Info($"[Orca] 践踏：全体 {DynamicVars.Damage.BaseValue} 点伤害 + 给 {hits} 个敌人各 1 层虚弱", 2);
+        Log.Info($"[Orca] 践踏：全体 {DynamicVars.Damage.BaseValue} 点伤害 + 给 {hits} 个敌人各 {BurnStacks} 层【焚烧】", 2);
     }
 
     /// <summary>敲后**去掉消耗**（用户口径："敲后去消耗"）。</summary>

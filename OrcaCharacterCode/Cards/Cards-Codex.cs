@@ -134,7 +134,8 @@ public sealed class OrcaEmberChase : OrcaCard
     /// </summary>
     protected override void AddExtraArgsToDescription(LocString description)
     {
-        description.Add("Burn", _burn);
+        // ★ 2026-10-04 修复：裸值 ⇒ `No suitable Formatter` ⇒ 整条卡面回退成原文。改为 DynamicVar。
+        description.Add(new DynamicVar("Burn", (decimal)_burn));
     }
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)

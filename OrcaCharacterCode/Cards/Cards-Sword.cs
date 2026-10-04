@@ -8,6 +8,7 @@ using MegaCrit.Sts2.Core.Entities.Powers;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Localization;   // ★ 卡面动态数值要用 LocString（AddExtraArgsToDescription）
+using MegaCrit.Sts2.Core.Localization.DynamicVars;   // ★ 必须用 DynamicVar 注入，裸值会 No suitable Formatter
 using MegaCrit.Sts2.Core.Models;
 
 namespace OrcaCharacter;
@@ -47,7 +48,8 @@ public sealed class OrcaBloodScabbard : OrcaCard
         {
             // 百科 / 牌库浏览时还没有 Owner ⇒ 显示 0
         }
-        description.Add("HpLoss", loss);
+        // ★ 2026-10-04 修复：裸值 ⇒ `No suitable Formatter` ⇒ 整条卡面回退成原文。改为 DynamicVar。
+        description.Add(new DynamicVar("HpLoss", (decimal)loss));
     }
 
     public override OrcaOrbForm OrbForm => OrcaOrbForm.Sword;

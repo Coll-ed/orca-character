@@ -171,8 +171,10 @@ public sealed class OrcaRollingFlame : OrcaCard
 
     protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new DamageVar(4m, (ValueProp)8) };
 
-    /// <summary>焚烧层数是普通字段 ⇒ 必须注入成动态变量，卡面才会跟着升级变。</summary>
-    protected override void AddExtraArgsToDescription(LocString description) => description.Add("Burn", _burn);
+    /// <summary>焚烧层数是普通字段 ⇒ 必须注入成动态变量，卡面才会跟着升级变。
+    /// ★ 2026-10-04 修复：原用裸值 ⇒ `No suitable Formatter` ⇒ 整条卡面回退成原文。</summary>
+    protected override void AddExtraArgsToDescription(LocString description) =>
+        description.Add(new DynamicVar("Burn", (decimal)_burn));
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {

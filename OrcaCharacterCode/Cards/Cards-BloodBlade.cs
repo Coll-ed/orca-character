@@ -74,13 +74,17 @@ public sealed class OrcaBloodBlade : OrcaCard
             Log.Warn($"[Orca] 魔剑卡面数字：取当前生命失败（按 0 显示）：{ex.Message}", 2);
         }
 
-        description.Add("LifeLoss", lifeLoss);
-        description.Add("HpLoss", lifeLoss);
-        description.Add("Gain", lifeLoss);              // ★ 全额（龙剑是 50%）
-        description.Add("LifePercent", LifePercent);
-        description.Add("Bonus", _bonus);
-        description.Add("Dealt", _bonus);
-        description.Add("LifestealPercent", 50);        // 单敌时的吸血倍率
+        // ★★ 2026-10-04 修复（用户实测：卡面显示成 {LifePercent:diff()} 之类原文）：
+        //    原来这 7 行全用【裸值】注入 ⇒ SmartFormat 报 `No suitable Formatter`
+        //    ⇒ 整条卡面回退成未格式化的原文。必须注入 DynamicVar。
+        //    同类证据见 OrcaKeyword.cs 里 2026-10-03 修过的同一坑。
+        description.Add(new DynamicVar("LifeLoss", (decimal)lifeLoss));
+        description.Add(new DynamicVar("HpLoss", (decimal)lifeLoss));
+        description.Add(new DynamicVar("Gain", (decimal)lifeLoss));              // ★ 全额（龙剑是 50%）
+        description.Add(new DynamicVar("LifePercent", (decimal)LifePercent));
+        description.Add(new DynamicVar("Bonus", (decimal)_bonus));
+        description.Add(new DynamicVar("Dealt", (decimal)_bonus));
+        description.Add(new DynamicVar("LifestealPercent", 50m));        // 单敌时的吸血倍率
         description.Add("KeywordTags", $"[gold]{OrcaSwordState.Title}[/gold]。\n[gold]永恒[/gold]。");
     }
 

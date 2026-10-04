@@ -88,7 +88,9 @@ public sealed class OrcaVoidReturn : OrcaCard
     /// </summary>
     protected override void AddExtraArgsToDescription(LocString description)
     {
-        /*TOGGLE-OFF-A7*/ // description.Add("Ratio", IsUpgraded ? 75 : 50);
+        // ★ 2026-10-04 恢复并修正：A7 原被 TOGGLE-OFF 注释掉 ⇒ 卡面里的 {Ratio} 没有值
+        //   ⇒ SmartFormat 失败 ⇒ 整条卡面回退成原文。且必须用 DynamicVar（裸值同样会失败）。
+        description.Add(new DynamicVar("Ratio", (decimal)(IsUpgraded ? 75 : 50)));
     }
 
     /// <summary>敲后：比例 50% → **75%**（在 OnPlay 里按 <c>IsUpgraded</c> 写入 Power）。</summary>
