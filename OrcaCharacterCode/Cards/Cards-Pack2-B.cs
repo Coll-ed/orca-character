@@ -22,10 +22,32 @@ namespace OrcaCharacter;
 /// </summary>
 public sealed class OrcaOverlook : OrcaCard
 {
-    /// <summary>给全体敌人挂的焚烧层数。</summary>
+    /// <summary>
+    ///     抽牌数。文案与代码同源：<c>ORCA_OVERLOOK.description</c> 里是 <c>{DrawCount:diff()}</c>。
+    ///     用户口径：<i>"下 1 张卡牌额外打出一次，而后将其消耗并抽取 1 张卡牌"</i>。
+    /// </summary>
+    private const int DrawCount = 1;
+
+    /// <summary>
+    ///     给全体敌人挂的焚烧层数。文案同源：<c>{BurnStacks:diff()}</c>。
+    ///     ⚠️ 2026-10-04 修：此前这两个值**只有常量、没有 DynamicVar**
+    ///     ⇒ SmartFormat 对 <c>{DrawCount:diff()}</c> 报 <c>No suitable Formatter</c>
+    ///     ⇒ **整条卡面**回退成未格式化的原文（用户报的"卡面爆变量名"）。缺一个键就会整条崩，所以两个都要声明。
+    /// </summary>
     private const int BurnStacks = 1;
 
     public override OrcaOrbForm OrbForm => OrcaOrbForm.None;
+
+    /// <summary>
+    ///     ★ 文案里用到 <c>{…:diff()}</c> 的键**必须**在这里声明 ——
+    ///     声明后由基类 <c>Description</c> 流水线统一 <c>DynamicVars.AddTo(description)</c> 注入。
+    ///     裸值（<c>description.Add(键, 值)</c>）只对**无格式化器**的占位符有效。
+    /// </summary>
+    protected override IEnumerable<DynamicVar> CanonicalVars => new[]
+    {
+        new DynamicVar("DrawCount", DrawCount),
+        new DynamicVar("BurnStacks", BurnStacks),
+    };
 
     /// <summary>1 费 · Skill · Rare · Self。</summary>
     public OrcaOverlook() : base(1, (CardType)2, (CardRarity)4, (TargetType)1) { }
@@ -36,7 +58,7 @@ public sealed class OrcaOverlook : OrcaCard
         await PowerCmd.Apply<OrcaOverlookPower>(ctx, Owner.Creature, 1m, Owner.Creature, this);
 
         // ② 抽 1 张
-        await CardPileCmd.Draw(ctx, 1, Owner);
+        await CardPileCmd.Draw(ctx, DrawCount, Owner);
 
         // ③ 为所有敌人附加 1 层焚烧
         var combat = Owner.Creature.CombatState;
