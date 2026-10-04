@@ -9,10 +9,13 @@
         <ModFolderName Condition="'$(ModFolderName)' == ''">奥卡角色-Orca</ModFolderName>
 
         <!--
-          Godot 编辑器可执行文件：仅 `dotnet publish` 导出 .pck 时需要。
-          取值优先级：/p:GodotPath=... > local.props > 环境变量 GODOT_PATH。
-          版本约束：游戏内置 MegaDot 4.5.1；用更新版本导出的 .pck 游戏不加载。
-          故此处不提供任何默认绝对路径——没配就由 csproj 的 NeedGodotForPublish 明确报错。
+          Godot 编辑器可执行文件（GodotPath）。
+          ⚠️ 2026-10-05 起 `dotnet publish` **不再调用 Godot 打包** —— pck 改由
+          tools/build-pck.py 生成（原因见 csproj 的 GodotPublish 注释：Godot 独立导出
+          会静默丢弃 Spine 等整类资源，产出 261 条目的残包）。
+          故 GodotPath 目前**没有使用者**，仅保留本机配置位以免历史脚本失效；
+          确实需要 Godot 做别的导出时，取值优先级：/p:GodotPath=... > local.props > 环境变量 GODOT_PATH。
+          版本约束（若将来启用）：游戏内置 MegaDot 4.5.1；用更新版本导出的 .pck 游戏不加载。
         -->
         <GodotPath Condition="'$(GodotPath)' == ''">$(GODOT_PATH)</GodotPath>
     </PropertyGroup>

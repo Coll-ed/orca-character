@@ -87,11 +87,11 @@ dotnet publish        # 上面 + 用 Godot 导出 .pck（需要 GodotPath）
 
 | 项 | 状态 |
 |---|---|
-| `OrcaCharacterCode/Cards/Cards.cs` | **内容不完整、从方法中间截断，已排除出编译** ⇒ 含 `OrcaBloodSword` 等卡牌，待按设计补写 |
-| `OrcaCharacterCode/_空文件/` | 3 个 0 字节文件（`OrcaEpochs` / `OrcaNirvanaSelfHarm` / `OrcaOverlookCompromise`），待确认后删除 |
+| `OrcaCharacterCode/Cards/Cards.cs` | ✅ **已解决**（2026-10-05 核实）：该残件已移除，其内容各有完整归属（`OrcaBloodSword` → `OrcaFrenzyCard` 体系、`FrenzyStrike` → `Cards-BloodBlade.cs`） |
+| `OrcaCharacterCode/_空文件/` | ✅ **已清空**（2026-10-05 核实：目录已无文件） |
 | 本地化 | `OrcaCharacter/localization/zhs/` 部分文件内容少于游戏内实际版本，待整理 |
-| 待验证改动 | 源码中残留 `TOGGLE-OFF-A2/A3/A4/A5/A7` 开关，对应的修复**尚未逐项实机验证** |
-| `.pck` | 本机未安装 Godot，暂时无法重新导出；当前沿用既有 `.pck` |
+| 待验证改动 | 源码中残留 `TOGGLE-OFF-A2/A3/A4/A5/A7` 开关（实测 5 处），对应的修复**尚未逐项实机验证** |
+| `.pck` | ✅ **已解决**（2026-10-05）：本机 Godot/MegaDot **在位**，且打包已改走 `tools/build-pck.py`（不再依赖 Godot 导出）⇒ `dotnet publish` 一条命令即可重建完整 `.pck`（334 条目 / 58,158,427 B） |
 | `LICENSE` | 尚未选定 |
 
 ---

@@ -48,8 +48,17 @@ namespace OrcaCharacter;
 ///     </list></para>
 ///
 ///     <para>⚠️ 用户口径里**没有**提到"击杀 +生命上限"（龙剑有）⇒ 本牌**不实现**该条 ✓</para>
+///
+///     <para>★★ <b>2026-10-05 改继承 <see cref="OrcaFrenzyCard" /></b>（原先直接继承 <see cref="OrcaCard" />）：
+///     权威卡面明写本牌带「<b>狂躁</b>」，而用户 2026-10-05 把狂躁定义为
+///     <i>"狂躁标签又自带了2端代码：奇巧，消耗联动（如战鼓）"</i>
+///     ⇒ 凡是狂躁卡就该由 <see cref="OrcaFrenzyCard" /> 统一提供这三件事：
+///     ① 回合结束自动打出；② 被丢弃 ⇒ 回抽牌堆（奇巧）；③ 被消耗 ⇒ 回抽牌堆（消耗联动）。
+///     原先本类自己<b>重复实现</b>了 ①②（<c>HasTurnEndInHandEffect</c> + <c>OnTurnEndInHand</c>），
+///     于是它<b>拿不到</b>③ —— 同一个"狂躁"在两处各写一份，正是踩坑指南坑 3-2「同一份数据有多个版本」。
+///     ⇒ 现在两份剑共用同一个基类，改动只写一处。</para>
 /// </summary>
-public sealed class OrcaBloodBlade : OrcaCard
+public sealed class OrcaBloodBlade : OrcaFrenzyCard
 {
     /// <summary>本场战斗内累计的伤害附加（与龙剑同一套写法：是字段，不是 DynamicVars）。</summary>
     private int _bonus;
@@ -79,9 +88,6 @@ public sealed class OrcaBloodBlade : OrcaCard
 
     /// <summary>「永恒」＝ 原版 <c>CardKeyword.Eternal</c>。</summary>
     public override IEnumerable<CardKeyword> CanonicalKeywords => new[] { CardKeyword.Eternal };
-
-    /// <summary>★ 狂躁：回合结束时仍在手牌 ⇒ 自动打出（必须 override，否则整条链不触发）。</summary>
-    public override bool HasTurnEndInHandEffect => true;
 
     /// <summary>★ 1 费 · 技能 · **先古 Ancient** · 目标是自己。</summary>
     public OrcaBloodBlade() : base(1, CardType.Skill, CardRarity.Ancient, TargetType.Self) { }
@@ -130,10 +136,12 @@ public sealed class OrcaBloodBlade : OrcaCard
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
         // ══════════ 狂躁（回合结束自动打出 / 被召唤出来直接打出）⇒ 全体敌人伤害 ══════════
+        // ★ 用基类的 IsFrenzyPlay（与龙剑同一套判据）：它会**消费**魔典标记，所以只调一次。
+        bool isFrenzy = IsFrenzyPlay(play);
         bool viaCodex = ConsumeViaCodex();
-        if (play.IsAutoPlay && !viaCodex)
+        if (isFrenzy)
         {
-            await FrenzyStrike(ctx, play);
+            await OnFrenzyPlay(ctx, play);
             return;
         }
 
@@ -166,7 +174,7 @@ public sealed class OrcaBloodBlade : OrcaCard
     }
 
     /// <summary>
-    ///     狂躁：对**所有敌人**造成（伤害附加）点伤害。
+    ///     狂躁：对**所有敌人**造成（伤害附加）点伤害。（基类 <see cref="OrcaFrenzyCard.OnFrenzyPlay" /> 的实现。）
     ///
     ///     <para>★ 2026-10-04 重写：**不再乘红莲淬倍率**（用户裁定"彻底断开" —— 那是很久之前的初版设计）。</para>
     ///
@@ -174,7 +182,7 @@ public sealed class OrcaBloodBlade : OrcaCard
     ///     注意这里是"本牌自己回血"，**不碰吸血机制**（用户："吸血我打算再整一个流派"）。
     ///     "受到的生命伤害"取的是**未格挡伤害**（<c>UnblockedDamage</c>），即真正掉血的那部分。</para>
     /// </summary>
-    private async Task FrenzyStrike(PlayerChoiceContext ctx, CardPlay play)
+    protected override async Task OnFrenzyPlay(PlayerChoiceContext ctx, CardPlay play)
     {
         var combat = Owner.Creature.CombatState;
         if (combat == null)
@@ -244,13 +252,6 @@ public sealed class OrcaBloodBlade : OrcaCard
         await CreatureCmd.SetCurrentHp(me, me.CurrentHp + heal);
         Log.Info($"[Orca] 嗜血魔剑·狂躁（单敌）：恢复 {heal} 点生命"
                  + $"（敌人受到的生命伤害 {dealt}，缺失 {missing}）", 2);
-    }
-
-    /// <summary>狂躁：回合结束时仍在手牌 ⇒ 自动打出（传 null 因为目标是自己）。</summary>
-    protected override async Task OnTurnEndInHand(PlayerChoiceContext ctx)
-    {
-        Log.Info("[Orca] 魔剑·狂躁触发：回合结束仍在手牌 → 自动打出（全体敌人）", 2);
-        await CardCmd.AutoPlay(ctx, this, null);
     }
 
     /// <summary>敲后追加**固有**（用户口径："龙剑和魔剑都是敲后固有"）。</summary>

@@ -85,15 +85,21 @@
         <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(CustomModsPath)" ContinueOnError="WarnAndContinue" />
     </Target>
 
-    <!-- ── 发布时用 Godot 导出 pck（不自己拼包）────────────────────────────
-         导出到暂存目录 → **校验产物** → 通过后才复制到 mods。
+    <!-- ── 发布时重建 pck：用仓库自己的打包器（**不使用** Godot 的 export-pack）────
+         ★★ 2026-10-05 实测：`Godot export-pack` 在**没有 GDExtension** 的环境里会
+         **静默丢弃整类资源**（Spine `.spatlas`/`.spskel` 与 `.godot/exported/**`），
+         实测产物 261 条目 / 53,867,608 B，而完整包是 334 条目 / 58,158,427 B。
+         残包体量远高于 MinPckBytes ⇒ 只看体量**拦不住**它（弱判据被读成成功，
+         同踩坑指南坑 3-8）。⇒ 打包改走 `tools/build-pck.py`（它按 `.import` 声明
+         从 `.godot/imported/` 取产物，并补齐 `.godot/exported/**`），
+         门槛校验同时卡**体量**与**条目数**两个判据。
 
-         判据的演进(两次实测教训):
+         判据的演进(三次实测教训):
            1) 起初用 ContinueOnError=WarnAndContinue,Godot 失败也不报 ⇒ 一次失败的导出
               把可用的 54 MB .pck 覆盖成 2.5 MB 残包。故改为"失败即致命"。
            2) 但 Spine 资源依赖**游戏目录的 GDExtension**,独立导出**必然**报错并返回非零码,
-              而产物其实是完整的 ⇒ 用退出码判定会永远误报失败。
-         ⇒ 最终判据:**不看 Godot 的退出码,看产物** —— .pck 必须存在,且体量不低于门槛。 -->
+              而产物其实是完整的 ⇒ 用退出码判定会永远误报失败。故改为看产物。
+           3) 而"看产物体量"又拦不住缺 Spine 的 53.8 MB 残包 ⇒ 增加**条目数**判据。 -->
     <PropertyGroup>
         <PckStagingDir>$(MSBuildProjectDirectory)/.godot/pck-stage</PckStagingDir>
         <PckStagingPath>$(PckStagingDir)/$(MSBuildProjectName).pck</PckStagingPath>
@@ -102,27 +108,28 @@
              取 20,000,000 B(约官方 36.6%)为下限 —— 远高于曾出现的 2,518,204 B 残包(4.6%),
              又留足余量,避免正常的资源差异被误判为失败。 -->
         <MinPckBytes>20000000</MinPckBytes>
+        <!-- 具名常量(hardcode-ok:阈值,理由如下):
+             完整包 334 条目(= 资源树文件数);缺 Spine 的 Godot 残包 261 条目。
+             取 300 —— 高于 261(拦得住残包),低于 334(留出正常增删资源的余量)。
+             与 tools/check-pck.py 的 DEFAULT_MIN_ENTRIES 同源同值。 -->
+        <MinPckEntries>300</MinPckEntries>
     </PropertyGroup>
 
-    <Target Name="NeedGodotForPublish" BeforeTargets="Publish">
-        <Error Text=" 发布需要 Godot 4.5.1 mono(MegaDot 更佳)。请设置 /p:GodotPath=... 或 local.props，当前 GodotPath='$(GodotPath)'。"
-               Condition="'$(GodotPath)' == '' or !Exists('$(GodotPath)')" />
-    </Target>
-
     <Target Name="GodotPublish" AfterTargets="Publish"
-            Condition="'$(GodotPath)' != '' and Exists('$(GodotPath)') and '$(IsInnerGodotExport)' != 'true'">
+            Condition="'$(IsInnerGodotExport)' != 'true'">
         <MakeDir Directories="$(PckStagingDir)" />
         <Delete Files="$(PckStagingPath)" ContinueOnError="WarnAndContinue" />
-        <Message Text="[Orca] 导出 .pck → $(PckStagingPath)" Importance="high" />
-        <!-- 容忍 Godot 的非零退出码:Spine 依赖游戏 GDExtension,独立导出必然报错。
-             真正的把关在下面这条:产物存在性 + 体量门槛(见 tools/check-pck.py)。 -->
-        <Exec Command="&quot;$(GodotPath)&quot; --headless --export-pack &quot;BasicExport&quot; &quot;$(PckStagingPath)&quot;"
-              EnvironmentVariables="IsInnerGodotExport=true;MSBUILDDISABLENODEREUSE=1"
-              ContinueOnError="WarnAndContinue" />
-        <!-- MSBuild 属性函数不允许 FileInfo::new()(实测 MSB4185),故体量校验交给工具。
-             校验失败即构建失败,绝不覆盖可用产物。 -->
-        <Exec Command="python &quot;$(MSBuildProjectDirectory)/tools/check-pck.py&quot; &quot;$(PckStagingPath)&quot; --min-bytes $(MinPckBytes)" />
+        <Message Text="[Orca] 重建 .pck（tools/build-pck.py）→ $(PckStagingPath)" Importance="high" />
+        <!-- 刻意**不设** PYTHONIOENCODING：实测设成 utf-8 时，Python 输出 UTF-8 而 MSBuild 按
+             系统代码页(GBK)解码 ⇒ 控制台乱码更严重。不设时 Python 跟随控制台编码。
+             ⚠️ 已知现象（不影响正确性）：MSBuild 捕获子进程输出时仍可能把中文显示成乱码，
+             但**条目数与体量始终可读**（纯 ASCII），足以判读结果；直接跑 python 则正常。
+             这也是为什么下面工具的输出刻意保留 ASCII 数字/箭头（同 check-pck.py 的注释）。 -->
+        <Exec Command="python &quot;$(MSBuildProjectDirectory)/tools/build-pck.py&quot; --src &quot;$(MSBuildProjectDirectory)&quot; --out &quot;$(PckStagingPath)&quot;" />
+        <!-- MSBuild 属性函数不允许 FileInfo::new()(实测 MSB4185),故校验交给工具。
+             体量 + 条目数双判据，校验失败即构建失败，绝不覆盖可用产物。 -->
+        <Exec Command="python &quot;$(MSBuildProjectDirectory)/tools/check-pck.py&quot; &quot;$(PckStagingPath)&quot; --min-bytes $(MinPckBytes) --min-entries $(MinPckEntries)" />
         <Copy SourceFiles="$(PckStagingPath)" DestinationFolder="$(CustomModsPath)" />
-        <Message Text="[Orca] .pck 已通过门槛校验并落到 $(CustomModsPath)" Importance="high" />
+        <Message Text="[Orca] .pck 已通过双门槛校验并落到 $(CustomModsPath)" Importance="high" />
     </Target>
 </Project>
