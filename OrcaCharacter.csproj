@@ -47,8 +47,11 @@
 
     <!-- ── 编译项 ─────────────────────────────────────────────────────── -->
     <ItemGroup>
-        <!-- Cards.cs 只恢复了约 34% 且从方法中间截断，排除出编译（待按设计文档重写） -->
-        <Compile Remove="OrcaCharacterCode/Cards/Cards.cs" />
+        <!-- Cards.cs 曾以"只恢复约 34%、从方法中间截断"为由被排除出编译。
+             经核实它是早期重复恢复留下的残件,两个内容都有完整归属:
+               OrcaBloodSword → Cards/OrcaBloodSword.cs(232 行,括号配平,完整)
+               FrenzyStrike   → Cards/Cards-BloodBlade.cs(唯一被调用的那一份)
+             且 FrenzyStrike 不在官方 dll 中(属本工程自有实现)。该文件已移除。 -->
         <!-- 资源目录不含 C#，显式排除避免 Godot 源生成器扫进去 -->
         <Compile Remove="OrcaCharacter/**" />
         <Compile Remove="docs/**" />
