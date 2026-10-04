@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Commands;
@@ -40,18 +41,32 @@ public sealed class OrcaBloodNirvana : OrcaCard
     }
 
     /// <summary>
-    ///     ★ 把回复比例注进卡面（<c>ORCA_BLOOD_NIRVANA.description</c> 里的 <c>{HealPercent:diff()}</c>）。
+    ///     ★ 把回复比例与**具体数值**注进卡面（<c>ORCA_BLOOD_NIRVANA.description</c> 里的
+    ///     <c>{HealPercent:diff()}%（{Heal:diff()}血）</c>）。
     ///
     ///     <para><b>为什么必须有这一段</b>（审计 §2.1.1）：卡面文案只有一个键
     ///     <c>{卡id}.description</c>，写死的数字**升级前后一模一样**；且带格式化器的占位符
     ///     只要缺一个键，SmartFormat 就报 <c>No suitable Formatter</c> ⇒ **整条卡面**回退成原文。</para>
     ///
-    ///     <para><b>单一来源</b>：数值取自 <see cref="OrcaBloodNirvanaPower.HealRatioDisplay" />
-    ///     （= 结算用的 <c>HealRatio</c> × 100），卡面与结算**不可能脱钩**。</para>
+    ///     <para><b>单一来源</b>：比例取自 <see cref="OrcaBloodNirvanaPower.HealRatioDisplay" />
+    ///     （= 结算用的 <c>HealRatio</c> × 100），具体数值用同一个 <see cref="OrcaBloodNirvanaPower.HealRatio" />
+    ///     乘当前临时上限并**同样向下取整** ⇒ 卡面与结算不可能脱钩。</para>
+    ///
+    ///     <para>★ 具体数值按**当前**临时生命上限预览（用户卡面口径「XX%（具体数值）」，
+    ///     同 <see cref="OrcaBloodForge" /> 的 <c>{MaxHpLoss}</c> 写法）——
+    ///     真实触发时的数值取决于那一刻的池子，这里是"此刻会发生多少"的预告。</para>
     /// </summary>
     protected override void AddExtraArgsToDescription(LocString description)
     {
         description.Add(new DynamicVar("HealPercent", OrcaBloodNirvanaPower.HealRatioDisplay));
+        description.Add(new DynamicVar("Heal", (decimal)HealPreview()));
+    }
+
+    /// <summary>此刻按临时上限预告的回血量 = <c>floor(当前临时上限 × HealRatio)</c>（与结算同口径）。</summary>
+    private static int HealPreview()
+    {
+        var pool = OrcaTempHp.Current;
+        return pool <= 0 ? 0 : (int)Math.Floor(pool * OrcaBloodNirvanaPower.HealRatio);
     }
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)

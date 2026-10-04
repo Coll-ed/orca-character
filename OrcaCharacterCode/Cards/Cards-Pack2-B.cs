@@ -50,15 +50,16 @@ public sealed class OrcaOverlook : OrcaCard
     /// <summary>
     ///     权威 L39：「**消耗**，敲后**去消耗**」。
     ///
-    ///     <para>实现方式照本工程**既有做法**（<see cref="OrcaCrimsonTemper" /> / <see cref="OrcaCodexIgnition" />）：
-    ///     用**动态关键词**而不是在 <c>OnUpgrade</c> 里加词条 —— 敲后返回空集即等于"去掉【消耗】"，
-    ///     不需要引擎提供"移除关键词"的 API。</para>
+    ///     <para>★★ 2026-10-05 修正：**不能在 <c>CanonicalKeywords</c> 里判 <c>IsUpgraded</c>** ——
+    ///     <c>CardModel.LocalKeywords</c> 是 <c>_keywords ??= UnionWith(CanonicalKeywords)</c>，
+    ///     **只算一次就缓存**，升级后不重算 ⇒ 敲后卡面照样显示「消耗」（用户实机截图实锤）。
+    ///     改用引擎标准做法 <c>RemoveKeyword</c>（照 <see cref="OrcaCrimsonTemper" />），
+    ///     详见那边的反编译实据。</para>
     ///
     ///     <para>旧实现在 <c>OnUpgrade</c> 里加的是 <c>CardKeyword.Retain</c>（保留），
     ///     权威写的是"去消耗" ⇒ 已删除。</para>
     /// </summary>
-    public override IEnumerable<CardKeyword> CanonicalKeywords
-        => IsUpgraded ? Array.Empty<CardKeyword>() : new[] { CardKeyword.Exhaust };
+    public override IEnumerable<CardKeyword> CanonicalKeywords => new[] { CardKeyword.Exhaust };
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
@@ -120,8 +121,9 @@ public sealed class OrcaOverlook : OrcaCard
                  + $"给 {hit} 个敌人各 {n} 层焚烧；获得 {n} 层【睥睨】", 2);
     }
 
-    // 敲后的变化（去掉【消耗】）由上面的 CanonicalKeywords 动态表达（照 OrcaCrimsonTemper）
-    // ⇒ 不需要额外 override。旧实现在这里加 CardKeyword.Retain（保留），权威 L39 写的是"去消耗"，已删除。
+    /// <summary>敲后**去掉【消耗】**（权威 L39：「敲后去消耗（单个图标）」）。
+    /// 旧实现在这里加 <c>CardKeyword.Retain</c>（保留），与权威不符，已删除。</summary>
+    protected override void OnUpgrade() => CardCmd.RemoveKeyword(this, CardKeyword.Exhaust);
 }
 
 /// <summary>

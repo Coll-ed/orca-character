@@ -130,11 +130,19 @@ public sealed class OrcaCrimsonTemper : OrcaCard
     /// <summary>
     ///     权威口径：「**消耗**，敲后去消耗」。
     ///
-    ///     <para>实现方式：用**动态关键词**而不是在 <c>OnUpgrade</c> 里加词条 ——
-    ///     敲后返回空集即等于"去掉消耗"，不需要引擎提供"移除关键词"的 API。</para>
+    ///     <para>★★ 2026-10-05 修正：**不能在 <c>CanonicalKeywords</c> 里判 <c>IsUpgraded</c>**。
+    ///     反编译实据（<c>CardModel.LocalKeywords</c>）：
+    ///     <code>if (_keywords != null) return _keywords;
+    ///     _keywords = new HashSet&lt;CardKeyword&gt;();
+    ///     _keywords.UnionWith(CanonicalKeywords);   // ← 只算这一次</code>
+    ///     ⇒ 关键词集**只算一次就缓存**，升级后永远不重算 ⇒ 敲后卡面**照样显示「消耗」**
+    ///     （用户 2026-10-05 实机截图实锤：红莲淬+/焚卷入典+/睥睨+ 三张都还挂着「消耗」）。</para>
+    ///
+    ///     <para>引擎的标准做法是 <c>RemoveKeyword</c>（<c>CardModel</c> 文档原文：
+    ///     "minus any removed by RemoveKeyword"）⇒ 基础集合恒为 {Exhaust}，
+    ///     敲后由 <see cref="OnUpgrade" /> 移除。</para>
     /// </summary>
-    public override IEnumerable<CardKeyword> CanonicalKeywords
-        => IsUpgraded ? Array.Empty<CardKeyword>() : new[] { CardKeyword.Exhaust };
+    public override IEnumerable<CardKeyword> CanonicalKeywords => new[] { CardKeyword.Exhaust };
 
     public OrcaCrimsonTemper() : base(1, CardType.Skill, CardRarity.Rare, TargetType.Self) { }
 
@@ -148,7 +156,8 @@ public sealed class OrcaCrimsonTemper : OrcaCard
             OrcaLog.Info("[Orca] 红莲淬：场上没有任何【焚烧】⇒ 本次无效果", 2);
     }
 
-    // 敲后的变化由上面的 CanonicalKeywords 动态表达（去掉【消耗】）⇒ 不需要额外 override。
+    /// <summary>敲后**去掉【消耗】**（权威：「敲后去消耗」）。</summary>
+    protected override void OnUpgrade() => CardCmd.RemoveKeyword(this, CardKeyword.Exhaust);
 }
 
 // ── 已删除：OrcaCrimsonTemperPower（红莲淬的"消耗卡牌累加倍率"记账 Power）────────────

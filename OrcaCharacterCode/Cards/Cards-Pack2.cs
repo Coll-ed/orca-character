@@ -290,6 +290,18 @@ public sealed class OrcaFireCloak : OrcaCard
                  + $"= 获得 {total} 点格挡", 2);
     }
 
-    /// <summary>敲后：基础格挡 10 → **13**。</summary>
-    protected override void OnUpgrade() => DynamicVars.Block.UpgradeValueBy(3m);
+    /// <summary>
+    ///     敲后额外获得的格挡量。
+    ///
+    ///     <para>★★ <b>2026-10-05 用户裁定</b>：「**敲后额外获得 2 点格挡**（忘记改权威了）」
+    ///     ⇒ 基础 10 → 敲后 <b>12</b>。</para>
+    ///
+    ///     <para>⚠️ 权威 <c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> 那句「敲后获得13格挡」
+    ///     是**用户自己写错**的（原话：「忘记改权威了」）⇒ 以用户口径 +2 为准，
+    ///     旧代码这里写的是 <c>3m</c>（得 13），已按裁定更正为 +2。</para>
+    /// </summary>
+    private const int UpgradeBlockStep = 2;
+
+    /// <summary>敲后：基础格挡 10 → **12**（+<see cref="UpgradeBlockStep" />）。</summary>
+    protected override void OnUpgrade() => DynamicVars.Block.UpgradeValueBy(UpgradeBlockStep);
 }

@@ -37,12 +37,13 @@ public sealed class OrcaCodexIgnition : OrcaCard
     /// <summary>
     ///     权威口径（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L2）：「1能量，魔典，技能，**消耗**，金卡，**敲后去消耗**」。
     ///
-    ///     <para>实现方式照 <see cref="OrcaCrimsonTemper" />（本工程既有做法）：用**动态关键词**
-    ///     而不是在 <c>OnUpgrade</c> 里加词条 —— 敲后返回空集即等于"去掉消耗"，
-    ///     不需要引擎提供"移除关键词"的 API。</para>
+    ///     <para>★★ 2026-10-05 修正：**不能在 <c>CanonicalKeywords</c> 里判 <c>IsUpgraded</c>** ——
+    ///     <c>CardModel.LocalKeywords</c> 是 <c>_keywords ??= UnionWith(CanonicalKeywords)</c>，
+    ///     **只算一次就缓存**，升级后不重算 ⇒ 敲后卡面照样显示「消耗」（用户实机截图实锤）。
+    ///     改用引擎标准做法 <c>RemoveKeyword</c>（照 <see cref="OrcaCrimsonTemper" />），
+    ///     详见那边的反编译实据。</para>
     /// </summary>
-    public override IEnumerable<CardKeyword> CanonicalKeywords
-        => IsUpgraded ? Array.Empty<CardKeyword>() : new[] { CardKeyword.Exhaust };
+    public override IEnumerable<CardKeyword> CanonicalKeywords => new[] { CardKeyword.Exhaust };
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
@@ -86,9 +87,9 @@ public sealed class OrcaCodexIgnition : OrcaCard
         }
     }
 
-    // 敲后的变化（去掉【消耗】）由上面的 CanonicalKeywords 动态表达（照 OrcaCrimsonTemper）
-    // ⇒ 不需要额外 override。原实现是 EnergyCost.UpgradeBy(-1)（1 费 → 0 费），
-    //    与权威「敲后去消耗」不符，已按审计建议删除该降费。
+    /// <summary>敲后**去掉【消耗】**（权威：「敲后去消耗」）。
+    /// 原实现是 <c>EnergyCost.UpgradeBy(-1)</c>（1 费 → 0 费），与权威「敲后去消耗」不符，已删除该降费。</summary>
+    protected override void OnUpgrade() => CardCmd.RemoveKeyword(this, CardKeyword.Exhaust);
 }
 
 /// <summary>
