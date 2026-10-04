@@ -93,20 +93,20 @@ public sealed class OrcaEmberWingPower : PowerModel
 }
 
 /// <summary>
-///     ★★★ 睥睨的 Power —— **下 1 张打出的牌额外打出一次（总共 1 次，不分牌型）**。
+///     ★★★ 睥睨的 Power —— **打出的牌额外打出一次（不分牌型），每多打出一次消耗 1 层**。
 ///
-///     <para>2026-09-23 口径纠正（用户：「设计里面应该是：**只能额外打出一张牌**，
-///     我们这里是每种可以额外打出 1 次，3 种不同种类的牌」）：
-///     中途曾一度改成原版三件套（连环拳 / 爆发 / 信号增强），但那是**每类各 1 次 ⇒ 最多 3 次**，
-///     强度超标且不是原文意思 ⇒ **改回单次、不分牌型**。</para>
+///     <para><b>权威口径</b>（<c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> L40）：
+///     <i>"并获得获得等额层buff-【睥睨】——**消耗一层，使打出的牌额外打出一次**"</i>
+///     ⇒ 层数由卡牌那侧按"消耗手牌数"等额施加（<see cref="OrcaOverlook" /> 的 <c>OnPlay</c>），
+///     本类只负责"打出一张牌 ⇒ 多打一次 + 减 1 层"。</para>
+///
+///     <para>措辞变化（旧 → 新）：旧权威写"使**这张牌**额外打出一次"，新权威改成"使**打出的牌**"
+///     ⇒ 与本类的"不分牌型"实现同口径（2026-09-23 用户口径也纠正过："只能额外打出一张牌"，
+///     一度改成原版三件套的"每类各 1 次"是错的，已改回单次）。</para>
 ///
 ///     <para>挂点照抄原版 <see cref="DuplicationPower" />：
 ///     <c>ModifyCardPlayCount</c> 返回 <c>playCount + 1</c>，
-///     再用配对的 <c>AfterModifyingCardPlayCount</c> 把层数减掉（一次性）。</para>
-///
-///     <para>⚠️ "抽 1 张 + 全体 1 层焚烧"由**卡牌那一侧**结算（<see cref="OrcaOverlook" />）；
-///     卡面的 <c>ORCA_OVERLOOK.description</c> 已按审计 §2.2-O1 改成与实现一致
-///     （旧文案承诺的"消耗手牌"与"三件套"本类与那张卡都没做）。</para>
+///     再用配对的 <c>AfterModifyingCardPlayCount</c> 把层数减掉（一层换一次）。</para>
 /// </summary>
 public sealed class OrcaOverlookPower : PowerModel
 {
@@ -114,13 +114,27 @@ public sealed class OrcaOverlookPower : PowerModel
 
     public override PowerStackType StackType => PowerStackType.Counter;
 
-    /// <summary>下 1 张牌多打出一次。</summary>
-    public override int ModifyCardPlayCount(CardModel card, Creature? target, int playCount)
-        => card.Owner?.Creature == Owner ? playCount + 1 : playCount;
+    /// <summary>
+    ///     ★ 本层 Power 管不管这张牌 —— <c>ModifyCardPlayCount</c> 与
+    ///     <c>AfterModifyingCardPlayCount</c> **共用这一个判据**（单一来源）。
+    ///
+    ///     <para>为什么配对钩子也要判：层数现在是"等额"（可能 N 层），若减层不核对
+    ///     "这一次到底有没有真的多打一次"，别的生物打出的牌（<c>Owner</c> 不是我们）
+    ///     也会白白扣掉一层 —— 与本工程既有做法一致（见 <c>OrcaOverlookBuffs.cs</c> 的
+    ///     "配对钩子必须再加一道判定，否则别的牌型打出来也会误扣层数"，那两个类已随本轮删除，
+    ///     但这条纪律保留）。</para>
+    /// </summary>
+    private bool Boosts(CardModel card) => card.Owner?.Creature == Owner;
 
-    /// <summary>配对钩子：触发后减 1 层（用完即清）。</summary>
+    /// <summary>下 1 张打出的牌多打出一次（只认自己打出的牌）。</summary>
+    public override int ModifyCardPlayCount(CardModel card, Creature? target, int playCount)
+        => Boosts(card) ? playCount + 1 : playCount;
+
+    /// <summary>配对钩子：**确实多打了一次**才减 1 层（用完即清）。</summary>
     public override async Task AfterModifyingCardPlayCount(CardModel card)
     {
+        if (!Boosts(card)) return;
+
         try
         {
             await PowerCmd.Decrement(this);

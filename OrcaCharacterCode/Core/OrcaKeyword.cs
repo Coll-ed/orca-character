@@ -141,15 +141,10 @@ internal static class OrcaKeyword
         "CODEX_ECHO", "回响",
         "接下来每次打出龙族魔典，额外多打出 1 次（每次消耗 1 层）。");
 
-    /// <summary>「杀意」/「智慧」/「血统」（睥睨：三种牌型各能额外打一次）。</summary>
-    internal static readonly OrcaCardKeyword KillingIntent = new(
-        "KILLING_INTENT", "杀意", "你的下一张**攻击牌**会额外打出一次。");
-
-    internal static readonly OrcaCardKeyword Wisdom = new(
-        "WISDOM", "智慧", "你的下一张**技能牌**会额外打出一次。");
-
-    internal static readonly OrcaCardKeyword Lineage = new(
-        "LINEAGE", "血统", "你的下一张**能力牌**会额外打出一次。");
+    // ── 已删除（2026-10-04，随睥睨重写）：KillingIntent / Wisdom / Lineage（【杀意】【智慧】【血统】）──
+    //   它们对应的三个 Power（`Powers\OrcaOverlookBuffs.cs`）**全工程没有任何 Apply 点**
+    //   （搜索证据见 `docs\睥睨重写记录.md`），且权威（`卡牌说明2.txt` L40）要的是**单个** buff【睥睨】
+    //   ⇒ 关键词与那三个 Power 一并删除，不留"看起来有实现"的假象。
 
     /// <summary>「红莲淬」（赤焰淬：魔剑下一击增幅）。</summary>
     internal static readonly OrcaCardKeyword CrimsonTemper = new(
@@ -191,13 +186,27 @@ internal static class OrcaKeyword
     internal static readonly OrcaCardKeyword BloodNirvana = new(
         "BLOOD_NIRVANA", "浴血涅槃", "当你受到致命伤害时，消耗所有战斗临时生命上限，并回复其中 50% 的生命（触发一次后消失）。");
 
+    /// <summary>
+    ///     「睥睨」（2026-10-04 随该卡重写新增）—— 卡面写 <c>[gold]睥睨[/gold]</c>，
+    ///     悬停浮窗的正文走 <see cref="OrcaCardKeyword.Resolve" /> 的第 ② 条链：
+    ///     <c>powers/ORCA_OVERLOOK_POWER.description</c>（＝ buff 自己的文案，**单一来源**，
+    ///     这里不复制一份规则文字，只留两处都取不到时的兜底串）。
+    ///
+    ///     <para>为什么这次可以写金色标签：第 2 批文案修复时**故意没写** <c>[gold]睥睨[/gold]</c>
+    ///     （见 <c>docs\文案修复记录-第2批.md</c> §2.2-O1 细节 1：「睥睨不在登记表里、
+    ///     Power 也没有本地化键 ⇒ 会是一个挂不到任何浮窗的假标签」）——
+    ///     本轮把这张卡重写时**两件事都补上了**：本登记表条目 + <c>ORCA_OVERLOOK_POWER.*</c> 键。</para>
+    /// </summary>
+    internal static readonly OrcaCardKeyword Overlook = new(
+        "OVERLOOK", "睥睨", "打出的牌额外打出一次（每多打出一次消耗 1 层）。");
+
     /// <summary>全部关键词（顺序 = 浮窗排列顺序）。</summary>
     internal static readonly OrcaCardKeyword[] All =
     {
         Rampage, Lifesteal, Burn, CodexEcho,
-        KillingIntent, Wisdom, Lineage, CrimsonTemper, HealBonus,
+        CrimsonTemper, HealBonus,
         Soar, MoltenBone, ExtraTurn, EmberWing, Homestead,
-        VoidReturn, BloodNirvana,
+        VoidReturn, BloodNirvana, Overlook,
     };
 
     /// <summary>

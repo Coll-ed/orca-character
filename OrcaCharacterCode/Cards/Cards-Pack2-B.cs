@@ -12,78 +12,116 @@ using MegaCrit.Sts2.Core.Models;
 
 namespace OrcaCharacter;
 
+/// <summary>
+///     ★ 睥睨（1 费 · **银龙** · 技能牌 · **金卡 Rare** · **消耗**，敲后去消耗）。
 ///
-///     <para>用户口径：<i>"下 1 张卡牌额外打出一次，而后将其消耗并抽取 1 张卡牌，
-///     并为所有敌人附加 1 层【焚烧】"</i>。</para>
+///     <para><b>权威口径</b>（<c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> L38-40）：
+///     <i>"睥睨 / 1费用，银龙，金卡，技能卡，消耗，敲后去消耗（单个图标） /
+///     消耗当前所有的手牌，抽取等额张卡牌，并为所有敌人附加等额层【焚烧】，
+///     并获得获得等额层buff-【睥睨】——消耗一层，使打出的牌额外打出一次"</i>
+///     （"获得"重复是原文笔误，语义是"获得**等额层** buff【睥睨】"）。</para>
 ///
-///     <para>"额外打出一次"由 <see cref="OrcaOverlookPower" /> 承担（挂点同原版复制）；
-///     "抽 1 张 + 全体 1 层焚烧"在这里立刻结算（用户口径把它们都挂在"下 1 张牌"那一趟之后，
-///     但本牌自己打出时结算等价且更可控 —— 见交接文档的实机验证点）。</para>
+///     <para><b>实现</b>（"等额"三连共用**一个**变量 <c>n</c> ⇒ 单一来源）：
+///     先把手牌逐张 <c>CardCmd.Exhaust</c>（**不含本卡自己** —— 它正在被打出）⇒
+///     <c>n</c> = 实际消耗成功的张数 ⇒ 抽 <c>n</c> 张 /
+///     给每个存活敌人各 <c>n</c> 层 <see cref="OrcaBurnPower" /> /
+///     给自己 <c>n</c> 层 <see cref="OrcaOverlookPower" />。顺序与权威原文逐句对应。</para>
 ///
-///     <para>⚠️ <b>2026-10-04（第 2 批文案修复）：本卡的卡面文案已按审计 §2.2-O1/O3 改成
-///     与上面这段实现一致</b> —— 旧文案承诺的"消耗 1 张手牌"与"杀意/智慧/血统三件套"
-///     在 <see cref="OnPlay" /> 里**一条都没做**（那三个 Power 在
-///     <c>OrcaOverlookBuffs.cs</c> 里只有定义、全工程无 Apply 点）。
-///     恢复权威口径（<c>卡牌说明2.txt</c> L40：消耗所有手牌 / 等额张数 / 单个【睥睨】）
-///     需要**重写效果**，已另行安排 ⇒ 本次只动文案，一行效果代码都没改。</para>
+///     <para>「额外打出一次」由 <see cref="OrcaOverlookPower" /> 承担：新权威把措辞从
+///     "使**这张牌**"改成了"使**打出的牌**" ⇒ 与本 Power 的"不分牌型、下 1 张打出的牌多打一次"
+///     同口径（每多打出一次消耗 1 层）。</para>
+///
+///     <para>⚠️ 2026-10-04 重写前，本卡与权威有七处不符（不消耗手牌 / 固定抽 1 / 固定 1 层焚烧 /
+///     睥睨恒 1 层 / 无 Exhaust / 敲后加 Retain / <c>OrbForm=None</c>），
+///     旧卡面还承诺过"杀意/智慧/血统三件套"（那三个 Power 全工程无 Apply 点，已随本轮删除）。
+///     逐项改前→改后见 <c>docs\睥睨重写记录.md</c>。</para>
 /// </summary>
 public sealed class OrcaOverlook : OrcaCard
 {
     /// <summary>
-    ///     抽牌数。文案与代码同源：<c>ORCA_OVERLOOK.description</c> 里是 <c>{DrawCount:diff()}</c>。
-    ///     用户口径：<i>"下 1 张卡牌额外打出一次，而后将其消耗并抽取 1 张卡牌"</i>。
+    ///     ★ **银龙**体系（权威 L39「1费用，<b>银龙</b>，金卡，技能卡」）。
+    ///     旧实现是 <see cref="OrcaOrbForm.None" />（不切形态），与本条不符。
     /// </summary>
-    private const int DrawCount = 1;
+    public override OrcaOrbForm OrbForm => OrcaOrbForm.Dragon;
 
-    /// <summary>
-    ///     给全体敌人挂的焚烧层数。文案同源：<c>{BurnStacks:diff()}</c>。
-    ///     ⚠️ 2026-10-04 修：此前这两个值**只有常量、没有 DynamicVar**
-    ///     ⇒ SmartFormat 对 <c>{DrawCount:diff()}</c> 报 <c>No suitable Formatter</c>
-    ///     ⇒ **整条卡面**回退成未格式化的原文（用户报的"卡面爆变量名"）。缺一个键就会整条崩，所以两个都要声明。
-    /// </summary>
-    private const int BurnStacks = 1;
-
-    public override OrcaOrbForm OrbForm => OrcaOrbForm.None;
-
-    /// <summary>
-    ///     ★ 文案里用到 <c>{…:diff()}</c> 的键**必须**在这里声明 ——
-    ///     声明后由基类 <c>Description</c> 流水线统一 <c>DynamicVars.AddTo(description)</c> 注入。
-    ///     裸值（<c>description.Add(键, 值)</c>）只对**无格式化器**的占位符有效。
-    /// </summary>
-    protected override IEnumerable<DynamicVar> CanonicalVars => new[]
-    {
-        new DynamicVar("DrawCount", DrawCount),
-        new DynamicVar("BurnStacks", BurnStacks),
-    };
-
-    /// <summary>1 费 · Skill · Rare · Self。</summary>
+    /// <summary>1 费 · Skill · Rare · Self（权威 L39「1费用，银龙，金卡，技能卡」）。</summary>
     public OrcaOverlook() : base(1, (CardType)2, (CardRarity)4, (TargetType)1) { }
+
+    /// <summary>
+    ///     权威 L39：「**消耗**，敲后**去消耗**」。
+    ///
+    ///     <para>实现方式照本工程**既有做法**（<see cref="OrcaCrimsonTemper" /> / <see cref="OrcaCodexIgnition" />）：
+    ///     用**动态关键词**而不是在 <c>OnUpgrade</c> 里加词条 —— 敲后返回空集即等于"去掉【消耗】"，
+    ///     不需要引擎提供"移除关键词"的 API。</para>
+    ///
+    ///     <para>旧实现在 <c>OnUpgrade</c> 里加的是 <c>CardKeyword.Retain</c>（保留），
+    ///     权威写的是"去消耗" ⇒ 已删除。</para>
+    /// </summary>
+    public override IEnumerable<CardKeyword> CanonicalKeywords
+        => IsUpgraded ? Array.Empty<CardKeyword>() : new[] { CardKeyword.Exhaust };
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
-        // ① 下 1 张卡牌额外打出一次
-        await PowerCmd.Apply<OrcaOverlookPower>(ctx, Owner.Creature, 1m, Owner.Creature, this);
+        // ① 消耗当前所有的手牌（权威 L40）。
+        //    不含本卡自己 —— 它正在被打出；引擎是否已把它移出手牌随版本/时序而定，
+        //    这里显式排除 ⇒ 两种情况下的口径一致（"所有手牌"不含正在打出的这一张）。
+        var hand = PileType.Hand.GetPile(Owner);
+        var toExhaust = hand.Cards.Where(c => !ReferenceEquals(c, this)).ToList();
 
-        // ② 抽 1 张
-        await CardPileCmd.Draw(ctx, DrawCount, Owner);
+        // ★ "等额"的**唯一**口径 = 本次实际消耗成功的张数（抽牌 / 焚烧 / 【睥睨】层数都读它）
+        int n = 0;
+        foreach (var card in toExhaust)
+        {
+            try
+            {
+                await CardCmd.Exhaust(ctx, card, false, false);
+                n++;
+            }
+            catch (Exception ex)
+            {
+                // 不静默吞：没消耗掉的牌不计入等额，且留下记录（权威的"等额"以实际消耗为准）
+                OrcaLog.Warn($"[Orca] 睥睨：消耗 {card.Id.Entry} 失败（不计入等额张数）：{ex.Message}", 2);
+            }
+        }
 
-        // ③ 为所有敌人附加 1 层焚烧
+        // ★ 边界（权威未规定，不猜）：手牌为 0 ⇒ 本卡**整条效果不发生**
+        //   （抽 0 张 / 附加 0 层焚烧 / 获得 0 层【睥睨】都没有意义，而挂一个 0 层的 Power 会多出一个空图标）
+        //   ⇒ 显式记 WARN，不静默通过。口径待用户确认：见 docs\睥睨重写记录.md。
+        if (n == 0)
+        {
+            OrcaLog.Warn("[Orca] 睥睨：手牌中没有其它牌 ⇒ 本次不抽牌、不附加【焚烧】、不获得【睥睨】"
+                       + "（权威未规定此边界，暂按「整条效果不发生」处理，待用户确认）", 2);
+            return;
+        }
+
+        // ② 抽取等额张卡牌（权威 L40）
+        await CardPileCmd.Draw(ctx, n, Owner);
+
+        // ③ 为所有敌人附加等额层【焚烧】（权威 L40）
         var combat = Owner.Creature.CombatState;
         int hit = 0;
-        if (combat != null)
+        if (combat == null)
+        {
+            OrcaLog.Warn("[Orca] 睥睨：不在战斗中 ⇒ 不附加【焚烧】", 2);
+        }
+        else
         {
             foreach (var enemy in combat.Enemies.Where(e => !e.IsDead).ToList())
             {
-                await PowerCmd.Apply<OrcaBurnPower>(ctx, enemy, BurnStacks, Owner.Creature, this);
+                await PowerCmd.Apply<OrcaBurnPower>(ctx, enemy, n, Owner.Creature, this);
                 hit++;
             }
         }
 
-        OrcaLog.Info($"[Orca] 睥睨：下 1 张牌额外打出一次；抽 1 张；给 {hit} 个敌人各 {BurnStacks} 层焚烧", 2);
+        // ④ 获得等额层 buff【睥睨】（消耗一层 ⇒ 使打出的牌额外打出一次）（权威 L40）
+        await PowerCmd.Apply<OrcaOverlookPower>(ctx, Owner.Creature, n, Owner.Creature, this);
+
+        OrcaLog.Info($"[Orca] 睥睨：消耗 {n} 张手牌 ⇒ 抽 {n} 张；"
+                 + $"给 {hit} 个敌人各 {n} 层焚烧；获得 {n} 层【睥睨】", 2);
     }
 
-    /// <summary>敲后：追加**保留**（用户口径"敲后保留"）。</summary>
-    protected override void OnUpgrade() => CardCmd.ApplyKeyword(this, CardKeyword.Retain);
+    // 敲后的变化（去掉【消耗】）由上面的 CanonicalKeywords 动态表达（照 OrcaCrimsonTemper）
+    // ⇒ 不需要额外 override。旧实现在这里加 CardKeyword.Retain（保留），权威 L39 写的是"去消耗"，已删除。
 }
 
 /// <summary>

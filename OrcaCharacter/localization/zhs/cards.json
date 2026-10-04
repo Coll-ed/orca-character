@@ -49,7 +49,7 @@
   "ORCA_NIRVANA_GRASP.description": "消耗一张牌，回复{Percent:diff()}%最大生命上限的生命（{Heal:diff()}血）。",
   "ORCA_NIRVANA_GRASP.pick": "选择一张牌消耗",
   "ORCA_NIRVANA_GRASP.title": "涅槃之握",
-  "ORCA_OVERLOOK.description": "抽{DrawCount:diff()}张牌，为所有敌人附加{BurnStacks:diff()}层[gold]焚烧[/gold]；你的下一张牌额外打出一次。",
+  "ORCA_OVERLOOK.description": "消耗当前所有手牌，抽取等额张卡牌；为所有敌人附加等额层[gold]焚烧[/gold]，并获得等额层[gold]睥睨[/gold]（消耗一层，使打出的牌额外打出一次）。",
   "ORCA_OVERLOOK.line": "[sine]就凭你们？[/sine]",
   "ORCA_OVERLOOK.title": "睥睨",
   "ORCA_REVERSE_SCALE.description": "失去生命到 1 点，获得失去生命 {RegenPercent:diff()}% 的[gold]再生[/gold]（{Regen:diff()}点）。\n补满能量、抽满手牌，并获得一个额外回合。",

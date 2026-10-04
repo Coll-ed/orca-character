@@ -7,9 +7,6 @@
   "LIFESTEAL.title": "吸血",
   "BURN.title": "焚烧",
   "CODEX_ECHO.title": "回响",
-  "KILLING_INTENT.title": "杀意",
-  "WISDOM.title": "智慧",
-  "LINEAGE.title": "血统",
   "CRIMSON_TEMPER.title": "红莲淬",
   "HEAL_BONUS.title": "焚文",
   "MOLTEN_BONE.title": "生死一线",
@@ -18,5 +15,6 @@
   "HOMESTEAD.title": "栖途",
   "VOID_RETURN.title": "归墟",
   "BLOOD_NIRVANA.title": "浴血涅槃",
+  "OVERLOOK.title": "睥睨",
   "CRIMSON_TEMPER.description": "将当前场上所有存在的【焚烧】**立刻无消耗触发一次**（层数不扣，火还在）。"
 }
