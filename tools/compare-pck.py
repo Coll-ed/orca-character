@@ -68,7 +68,7 @@ REASON_IMPORTED = "导入产物:重新导入后哈希名不同,.import 已同步
 REASON_EXPORTED = "导出中间产物:源资源依赖游戏自有资源,未能生成"
 REASON_RAW = "原始源文件:官方把源文件也打了包,本工程靠 .import 重映射 ⇒ 冗余"
 REASON_SCENE = "场景:引用了游戏自有资源(主题/特效图/游戏 GDScript)⇒ 被剔除"
-REASON_ATLAS = "图集精灵:图集源图(power_atlas 等)不在仓库 ⇒ 其下全部精灵加载失败"
+REASON_ATLAS = "图集精灵:其图集源图(power_atlas 等)属「奥卡卡图」模组——官方 pck 与本工程 pck 里都没有该图集 ⇒ 精灵加载失败"
 REASON_MATERIAL = "材质:引用图集/游戏自有着色器,依赖链断裂 ⇒ 被剔除"
 REASON_AUDIO_TRES = "音频资源(.tres):引用了尚未还原的 .mp3 源,依赖链断裂 ⇒ 被剔除"
 REASON_UNKNOWN = "待查明"
@@ -101,9 +101,9 @@ def classify(entry: str) -> tuple[str, str]:
         return "C", REASON_RAW
     if entry.startswith("scenes"):
         return "B", REASON_SCENE
-    # 以下三类:本工程自有资源,但依赖链断裂 ⇒ 计入真实待办
+    # 图集精灵:依赖「奥卡卡图」模组的图集 ⇒ 与 B 同类(无功能影响,运行时由该模组 pck 提供)
     if entry.startswith(ATLAS_DIR):
-        return "D", REASON_ATLAS
+        return "B", REASON_ATLAS
     if entry.startswith(AUDIO_TRES_DIR):
         return "D", REASON_AUDIO_TRES
     if entry.startswith(MATERIAL_DIR + os.sep):
