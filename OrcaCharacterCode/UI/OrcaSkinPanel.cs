@@ -1,6 +1,8 @@
 using System;
+using System.Text.Json;
 using Godot;
 using HarmonyLib;
+using MegaCrit.Sts2.Core.Bindings.MegaSpine;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
 
@@ -9,9 +11,13 @@ namespace OrcaCharacter;
 /// <summary>
 ///     ★★★ **本模组自带的皮肤切换面板**（用户口径 2026-10-05：「下一步就是重新做皮肤切换管理器了」）。
 ///
+///     <para><b>形态（照用户 2026-10-05 的手绘草图）</b>：标题＝**当前皮肤名** → 中间一块**实时小人**
+///     （战斗待机动画，随皮肤变）→ 左右两个箭头（《 》）循环切换两套皮肤。面板可**拖动**，
+///     位置记在本模组配置里（用户口径：「我希望给这个浮窗做个拖动功能」+「记住位置」）。</para>
+///
 ///     <para><b>为什么要自己做</b>：切换入口原先完全依赖**外部皮肤包**（<c>奥卡皮肤-Orca\CharacterSkinManager</c>，
 ///     第三方通用管理器）。用户的设计理念一直是「整合到奥卡角色模组本体」——
-///     本模组已经有了全部两套骨架（路径见 <see cref="OrcaSkin" /> 的四个访问器），
+///     本模组已经有全部两套骨架（路径见 <see cref="OrcaSkin" /> 的四个访问器），
 ///     应用侧（战斗 / 商店 / 篝火 / 卡框 / 能量球 / 图标 / 高亮色 / 气泡色）也早已齐全，
 ///     唯独"点哪儿切"在别人家里 ⇒ 皮肤包没装、或它改了行为，本角色就没法切皮肤。</para>
 ///
@@ -21,9 +27,6 @@ namespace OrcaCharacter;
 ///     [HarmonyPatch(typeof(NCharacterSelectScreen), "SelectCharacter")] → 通知选中角色 + 刷新面板 + 换选人界面大模型
 ///     </code></para>
 ///
-///     <para><b>位置照它的实测坐标</b>：锚右下角、保持尺寸，偏移 <c>L-560 T-300 R-270 B-100</c>
-///     （它那块面板用 <c>L-560 T-304 R-214 B-76</c>，在选人界面里不挡游戏 UI）。</para>
-///
 ///     <para>⚠️ 面板只在**选中奥卡**时显示（别的角色不该看见奥卡的皮肤开关）。</para>
 /// </summary>
 internal static class OrcaSkinPanel
@@ -31,27 +34,45 @@ internal static class OrcaSkinPanel
     /// <summary>面板节点名（<c>EnsureInjected</c> 用它判重，避免重复注入）。</summary>
     private const string PanelNodeName = "OrcaSkinPanel";
 
-    private const string Title = "皮肤";
+    /// <summary>面板位置落盘文件名（与本模组皮肤配置同目录，见 <see cref="OrcaSkin.UserStorePath" />）。</summary>
+    private const string PanelPosFile = "panel.json";
 
-    // ── 面板几何（具名常量：来源＝外部管理器的实测可用坐标，见类注释）──────────
-    private const int PanelOffsetLeft = -560;
-    private const int PanelOffsetTop = -300;
-    private const int PanelOffsetRight = -270;
-    private const int PanelOffsetBottom = -100;
+    // ── 面板几何（具名常量：默认位置来源＝外部管理器的实测可用坐标，见类注释；
+    //    尺寸按本面板内容重算：标题 + 预览 + 箭头）──────────────────────────
+    private const int DefaultOffsetLeft = -560;
+    private const int DefaultOffsetTop = -300;
+    private const int DefaultOffsetRight = -340;
+    private const int DefaultOffsetBottom = -90;
 
-    /// <summary>预览图尺寸（像素）。</summary>
-    private const int PreviewWidth = 92;
-    private const int PreviewHeight = 128;
+    /// <summary>预览框尺寸（像素）。</summary>
+    private const int PreviewWidth = 120;
+    private const int PreviewHeight = 150;
 
-    /// <summary>面板里那两个按钮的引用（<c>Refresh</c> 更新按下态用）。</summary>
-    private static Button? _plateButton;
-    private static Button? _weddingButton;
-    private static TextureRect? _preview;
+    /// <summary>
+    ///     预览小人的缩放。
+    ///     <para>来源：<c>scenes/creature_visuals/orca.tscn</c> 里 <c>Visuals</c> 节点的
+    ///     <c>scale = 0.28</c>，而该场景的 <c>Bounds</c> 是 242×278 ⇒ 满尺寸约 993 px 高；
+    ///     缩到 <see cref="PreviewHeight" /> 附近 ⇒ 约 0.13。</para>
+    /// </summary>
+    private const float PreviewSpineScale = 0.13f;
 
-    /// <summary>程序化改按钮状态时的重入闸门（改 ButtonPressed 会发 Toggled，不该被当作用户点击）。</summary>
+    /// <summary>左右箭头按钮的宽度（像素）。</summary>
+    private const int ArrowWidth = 34;
+
+    private static PanelContainer? _panel;
+    private static Label? _title;
+    private static Control? _previewBox;
+    private static Node? _previewSpine;
+    private static string _previewSkinTag = string.Empty;
+    private static bool _previewAnimStarted;
+
+    /// <summary>程序化改状态时的重入闸门（不想把程序性改动当成用户操作）。</summary>
     private static bool _updating;
 
-    /// <summary>当前面板属于哪个屏幕（点按钮时要回头刷新它）。</summary>
+    /// <summary>拖动中。</summary>
+    private static bool _dragging;
+
+    /// <summary>当前面板属于哪个屏幕（点箭头时要回头刷新它）。</summary>
     private static NCharacterSelectScreen? _screen;
 
     /// <summary>注入面板（幂等：已经注入过就直接返回）。</summary>
@@ -64,43 +85,37 @@ internal static class OrcaSkinPanel
         try
         {
             var panel = new PanelContainer { Name = PanelNodeName, Visible = false };
-
-            // 锚右下角 + 保持尺寸（照外部管理器的实测坐标）
-            panel.SetAnchorsAndOffsetsPreset(
-                Control.LayoutPreset.BottomRight, Control.LayoutPresetMode.KeepSize, 0);
-            panel.OffsetLeft = PanelOffsetLeft;
-            panel.OffsetTop = PanelOffsetTop;
-            panel.OffsetRight = PanelOffsetRight;
-            panel.OffsetBottom = PanelOffsetBottom;
+            ApplyDefaultPlacement(panel);
 
             var column = new VBoxContainer();
             panel.AddChild(column);
 
-            column.AddChild(new Label { Text = Title });
+            _title = new Label { HorizontalAlignment = HorizontalAlignment.Center };
+            column.AddChild(_title);
 
+            // ── 中间：左箭头 | 实时小人 | 右箭头 ──────────────────────
             var row = new HBoxContainer();
             column.AddChild(row);
 
-            _preview = new TextureRect
+            row.AddChild(MakeArrow("《", -1));
+            _previewBox = new Control
             {
                 CustomMinimumSize = new Vector2(PreviewWidth, PreviewHeight),
-                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
-                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                MouseFilter = Control.MouseFilterEnum.Pass,   // 让空白处的点击落到面板上（可拖动）
             };
-            row.AddChild(_preview);
+            row.AddChild(_previewBox);
+            row.AddChild(MakeArrow("》", +1));
 
-            var buttons = new VBoxContainer();
-            row.AddChild(buttons);
-
-            // 两个按钮同一 ButtonGroup ⇒ 互斥；选中态由 Refresh 设，用户点击才走 Pressed
-            var group = new ButtonGroup();
-            _plateButton = MakeSkinButton("板甲", OrcaSkin.Plate, group);
-            _weddingButton = MakeSkinButton("婚纱", OrcaSkin.Wedding, group);
-            buttons.AddChild(_plateButton);
-            buttons.AddChild(_weddingButton);
+            // 拖动：挂在面板自己身上（箭头按钮会先吃掉自己的点击）
+            panel.GuiInput += @event => OnPanelGuiInput(@event, panel);
 
             screen.AddChild(panel);
-            OrcaLog.Info("[Orca] 皮肤面板已注入选人界面（选中奥卡时显示）", 2);
+            _panel = panel;
+
+            var saved = LoadSavedPosition();
+            if (saved != null) ApplySavedPlacement(panel, saved.Value);
+
+            OrcaLog.Info($"[Orca] 皮肤面板已注入选人界面（选中奥卡时显示；位置={(saved != null ? "已记住" : "默认")}）", 2);
         }
         catch (Exception ex)
         {
@@ -108,14 +123,28 @@ internal static class OrcaSkinPanel
         }
     }
 
-    private static Button MakeSkinButton(string text, string skin, ButtonGroup group)
+    private static void ApplyDefaultPlacement(Control panel)
     {
-        var button = new Button { Text = text, ToggleMode = true, ButtonGroup = group };
-        button.Pressed += () => OnSkinPressed(skin);
+        panel.SetAnchorsAndOffsetsPreset(
+            Control.LayoutPreset.BottomRight, Control.LayoutPresetMode.KeepSize, 0);
+        panel.OffsetLeft = DefaultOffsetLeft;
+        panel.OffsetTop = DefaultOffsetTop;
+        panel.OffsetRight = DefaultOffsetRight;
+        panel.OffsetBottom = DefaultOffsetBottom;
+    }
+
+    private static Button MakeArrow(string text, int direction)
+    {
+        var button = new Button
+        {
+            Text = text,
+            CustomMinimumSize = new Vector2(ArrowWidth, PreviewHeight),
+        };
+        button.Pressed += () => CycleSkin(direction);
         return button;
     }
 
-    /// <summary>按当前选中的角色刷新面板：**只有奥卡**才显示；并同步预览图与按钮按下态。</summary>
+    /// <summary>按当前选中的角色刷新面板：**只有奥卡**才显示；并同步标题/预览/小人。</summary>
     internal static void Refresh(NCharacterSelectScreen screen, CharacterModel? character)
     {
         var panel = screen.GetNodeOrNull<PanelContainer>(PanelNodeName);
@@ -129,10 +158,11 @@ internal static class OrcaSkinPanel
     }
 
     /// <summary>
-    ///     只同步"当前选的是哪套"（预览图 + 按钮按下态），不动可见性。
+    ///     同步"现在穿的是哪套"：标题 = 当前皮肤名、预览小人换骨架、箭头可见性。
     ///
-    ///     <para>给选人界面那个 1 秒轮询用：玩家也可能在**外部管理器**的面板里切皮肤，
-    ///     那时本面板的高亮会滞后 ⇒ 轮询里一起同步。</para>
+    ///     <para>给选人界面那个 1 秒轮询也调一次：玩家可能在**外部管理器**的面板里切皮肤，
+    ///     那时本面板会滞后 ⇒ 一起同步。顺带承担"小人动画还没起来就再试一次"的补偿
+    ///     （骨架异步加载，见 <see cref="ApplyPreviewSkin" /> 的说明）。</para>
     /// </summary>
     internal static void SyncState()
     {
@@ -142,16 +172,10 @@ internal static class OrcaSkinPanel
             OrcaSkin.Refresh();                       // 立刻重读（不吃 1.5s 节流）
             var wedding = OrcaSkin.IsWedding;
 
-            if (_preview != null)
-            {
-                var path = wedding
-                    ? OrcaCharacterIcon.WeddingSelectIllustPath
-                    : OrcaCharacterIcon.PlateSelectIllustPath;
-                _preview.Texture = ResourceLoader.Load<Texture2D>(path);
-            }
+            if (_title != null) _title.Text = wedding ? "婚纱" : "板甲";
 
-            if (_plateButton != null) _plateButton.ButtonPressed = !wedding;
-            if (_weddingButton != null) _weddingButton.ButtonPressed = wedding;
+            EnsurePreview();
+            ApplyPreviewSkin();
         }
         catch (Exception ex)
         {
@@ -163,23 +187,175 @@ internal static class OrcaSkinPanel
         }
     }
 
-    /// <summary>用户点了某个皮肤：双写选择 → 就地刷新已在屏上的角色图 → 换选人界面的大模型。</summary>
-    private static void OnSkinPressed(string skin)
+    // ── 预览小人（裸 SpineSprite，不实例化带战斗脚本的场景）─────────────────
+
+    /// <summary>
+    ///     建预览小人（只建一次）。
+    ///
+    ///     <para>★ 为什么不用 <c>scenes/creature_visuals/orca.tscn</c>：那个场景的根节点挂着
+    ///     **战斗脚本** <c>src/Core/Nodes/Combat/NCreatureVisuals.cs</c>（场景实据），
+    ///     在选人界面里实例化它等于把战斗逻辑搬出战斗环境 —— 风险不值当。
+    ///     这里直接造一个裸 <c>SpineSprite</c>（类名实据＝同场景里 <c>type="SpineSprite"</c>），
+    ///     只设骨架数据与待机动画。</para>
+    /// </summary>
+    private static void EnsurePreview()
+    {
+        if (_previewSpine != null || _previewBox == null) return;
+
+        var created = ClassDB.Instantiate(MegaSprite.spineClassName);
+        if (created.AsGodotObject() is not Node2D spine)
+        {
+            OrcaLog.Warn($"[Orca] 皮肤预览：造不出 {MegaSprite.spineClassName}（面板照常可用，只是没有小人）", 2);
+            return;
+        }
+
+        // 脚底对齐预览框底部中间（角色原点在脚下）
+        spine.Position = new Vector2(PreviewWidth / 2f, PreviewHeight);
+        spine.Scale = Vector2.One * PreviewSpineScale;
+
+        _previewBox.AddChild(spine);
+        _previewSpine = spine;
+        OrcaLog.Info("[Orca] 皮肤预览小人已建立", 2);
+    }
+
+    /// <summary>把当前皮肤的**战斗骨架**套到预览小人上，并播待机动画。</summary>
+    private static void ApplyPreviewSkin()
+    {
+        if (_previewSpine == null) return;
+
+        var tag = OrcaSkin.Active + "/" + OrcaSkin.BattleSkeleton;
+        if (tag == _previewSkinTag && _previewAnimStarted) return;   // 已经套好且动画在播 ⇒ 不重复动它
+
+        var res = ResourceLoader.Load<Resource>(OrcaSkin.BattleSkeleton);
+        if (res == null)
+        {
+            OrcaLog.Warn($"[Orca] 皮肤预览：骨架加载失败 {OrcaSkin.BattleSkeleton}", 2);
+            return;
+        }
+
+        var mega = new MegaSprite(_previewSpine);
+        if (tag != _previewSkinTag)
+        {
+            mega.SetSkeletonDataRes(new MegaSkeletonDataResource(res));
+            _previewSkinTag = tag;
+            _previewAnimStarted = false;                            // 换了骨架，动画要重播
+        }
+
+        // ⚠️ 骨架异步加载 ⇒ 未就绪时驱动会 fail-fast。这里**不报错**，留给下一次 SyncState 重试
+        //    （选人界面那个 1 秒轮询会一直调过来；一旦就绪就起播）。
+        if (!mega.IsAnimationStateReady()) return;
+
+        mega.GetAnimationState().SetAnimation(OrcaBattleIdleAnimation, loop: true);
+        _previewAnimStarted = true;
+        OrcaLog.Info($"[Orca] 皮肤预览已套 {OrcaSkin.Active}（{OrcaBattleIdleAnimation}）", 2);
+    }
+
+    /// <summary>预览播的战斗待机动画名 —— 与皮肤定义 <c>skins/orca/&lt;皮肤&gt;/skin.json</c> 的 <c>battle.idle</c> 同源。</summary>
+    private const string OrcaBattleIdleAnimation = "idle_loop";
+
+    // ── 切换 ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    ///     左右箭头：在两套皮肤之间循环。
+    ///     <para>只有两套 ⇒ 左右两个方向都是"切到另一套"（不是错误，是两套的必然结果；
+    ///     这两个箭头是为了照草图的形态，将来加第三套时改成按 <paramref name="direction" /> 取相邻即可）。</para>
+    /// </summary>
+    private static void CycleSkin(int direction)
     {
         if (_updating) return;
 
         try
         {
-            OrcaSkin.SetSkin(skin);                    // 内含 RefreshLiveIcons（小图 + 立绘就地刷新）
+            var target = OrcaSkin.IsWedding ? OrcaSkin.Plate : OrcaSkin.Wedding;
+            OrcaLog.Info($"[Orca] 皮肤箭头（{(direction < 0 ? "左" : "右")}）→ {target}", 2);
+
+            OrcaSkin.SetSkin(target);                  // 双写 + 就地刷新角色图
 
             var screen = _screen;
             if (screen != null) OrcaSceneSkin.ApplyToCharacterSelect(screen);
 
-            SyncState();                               // 预览图 + 按钮高亮跟上
+            SyncState();
         }
         catch (Exception ex)
         {
             OrcaLog.Warn($"[Orca] 切换皮肤出错：{ex.Message}", 2);
+        }
+    }
+
+    // ── 拖动 + 位置持久化 ──────────────────────────────────────────────────
+
+    private static void OnPanelGuiInput(InputEvent @event, Control panel)
+    {
+        try
+        {
+            if (@event is InputEventMouseButton button && button.ButtonIndex == MouseButton.Left)
+            {
+                if (button.Pressed)
+                {
+                    // ★ 一旦开始拖，就把锚点切成左上（keepOffsets ⇒ 视觉位置不变），
+                    //   之后 Position 就是"自由坐标"，拖动与落盘都好算。
+                    panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft, keepOffsets: true);
+                    _dragging = true;
+                }
+                else if (_dragging)
+                {
+                    _dragging = false;
+                    SavePosition(panel.Position);
+                }
+            }
+            else if (@event is InputEventMouseMotion motion && _dragging)
+            {
+                panel.Position += motion.Relative;
+            }
+        }
+        catch (Exception ex)
+        {
+            _dragging = false;
+            OrcaLog.Warn($"[Orca] 皮肤面板拖动出错：{ex.Message}", 2);
+        }
+    }
+
+    private static void ApplySavedPlacement(Control panel, Vector2 pos)
+    {
+        panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft, keepOffsets: true);
+        panel.Position = pos;
+    }
+
+    /// <summary>读回记住的位置；没有就返回 null（用默认位置）。</summary>
+    private static Vector2? LoadSavedPosition()
+    {
+        try
+        {
+            var path = OrcaSkin.UserStorePath(PanelPosFile);
+            if (path == null || !System.IO.File.Exists(path)) return null;
+
+            using var doc = JsonDocument.Parse(System.IO.File.ReadAllText(path));
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("x", out var x) || !root.TryGetProperty("y", out var y)) return null;
+
+            return new Vector2((float)x.GetDouble(), (float)y.GetDouble());
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 读皮肤面板位置失败（用默认位置）：{ex.Message}", 2);
+            return null;
+        }
+    }
+
+    private static void SavePosition(Vector2 pos)
+    {
+        try
+        {
+            var path = OrcaSkin.UserStorePath(PanelPosFile);
+            if (path == null) return;
+
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
+            System.IO.File.WriteAllText(path, JsonSerializer.Serialize(new { x = pos.X, y = pos.Y }));
+            OrcaLog.Info($"[Orca] 皮肤面板位置已记住：({pos.X:F0}, {pos.Y:F0})", 2);
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 写皮肤面板位置失败：{ex.Message}", 2);
         }
     }
 }

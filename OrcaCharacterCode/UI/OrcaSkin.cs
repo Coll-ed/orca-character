@@ -325,12 +325,17 @@ internal static class OrcaSkin
 
     private static string ManagerStorePath() => UserPath(ManagerDir, ManagerFile) ?? "(不可用)";
 
+    /// <summary>
+    ///     本模组在 <c>user://</c> 下的配置文件路径（皮肤配置、面板位置……都走这里，**单一来源**）。
+    /// </summary>
+    internal static string? UserStorePath(string fileName) => UserPath(StoreDir, fileName);
+
     /// <summary>读本模组自己的选择（一行 skin_id）。读不到就返回 null。</summary>
     private static string? ReadOwnStore()
     {
         try
         {
-            var path = UserPath(StoreDir, StoreFile);
+            var path = UserStorePath(StoreFile);
             if (path == null || !File.Exists(path)) return null;
 
             var text = File.ReadAllText(path).Trim();
@@ -348,7 +353,7 @@ internal static class OrcaSkin
     {
         try
         {
-            var path = UserPath(StoreDir, StoreFile);
+            var path = UserStorePath(StoreFile);
             if (path == null) return;
 
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
