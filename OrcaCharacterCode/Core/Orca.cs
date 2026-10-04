@@ -16,15 +16,27 @@ namespace OrcaCharacter;
 ///     初始生命 60、起始遗物「银龙血统」、初始卡组 打击×4 + 防御×4 + 龙族魔典 + 嗜血龙剑。
 ///     模型 id 由类型名推导（`ModelDb.GetId`）⇒ ORCA；本地化键用 `ORCA.*`。
 /// </summary>
-// ★ 第 1 步（按官方 wiki 接入 BaseLib 注册体系）：
-//   原来 `: CharacterModel`（普通）⇒ 不在 CustomContentDictionary.CustomCharacters 里
-//   ⇒ BaseLib 生成百科过滤器时永远不会为奥卡建 ⇒ 原版 NCardLibrary.OnSubmenuOpened 里
-//      `_cardPoolFilters[characterModel]`（无保护索引）就会抛 KeyNotFoundException
-//      ⇒ 异常被 Godot 的 UI 回调吞掉 ⇒ 界面半初始化 ⇒ 硬卡死、无堆栈
-//   换基类即可完成注册（全部成员 virtual 且有默认值）
-//   ⚠️ [CustomID("ORCA")] 必须保留：否则 id 会变成 CHARACTER.ORCACHARACTER-ORCA
-[CustomID("ORCA")]
-public sealed class Orca : CustomCharacterModel
+// ★★ 2026-10-04 改回 `: CharacterModel`（与官方 dll 一致）—— 撤销一次【打错靶子】的改动。
+//
+//   反编译【官方基准 dll】实据:
+//       public sealed class Orca : CharacterModel        ← 普通基类,没有 [CustomID]
+//   而回退前的本工程源码是:
+//       [CustomID("ORCA")] public sealed class Orca : CustomCharacterModel
+//   ⇒ 这是本工程相对官方的一处真实偏离,必须撤销。
+//
+//   当初改它的理由(见 git 历史注释):`OrcaCardLibrary` 生成百科过滤器时,
+//   原版 `NCardLibrary.OnSubmenuOpened` 里 `_cardPoolFilters[characterModel]` 是无保护索引,
+//   不在 CustomContentDictionary 里就会抛 KeyNotFoundException ⇒ 界面半初始化 ⇒ 卡死。
+//   ⚠️ 但那个推理【打错了靶子】:
+//     · 它针对的是「打开**百科**」,而真实卡死发生在「打出**卡牌**」——两个完全不同的链路;
+//     · 而且本工程的 `OrcaCardLibrary.OrcaCardLibraryInjector` 本来就会
+//       `cardPoolFilters[orca] = filter` 把那条补进字典 ⇒ 根本不依赖基类注册。
+//   根提交 README 也已实测记录该改动的结果:
+//     「❌ 仍卡死（且引入角色选择界面多出几项皮肤的副作用）」
+//   ⇒ 收益为零、副作用明确(选人界面多出条目的那个问题) ⇒ 撤销,回到与官方逐字一致。
+//
+//   模型 id 由类型名推导(`ModelDb.GetId`)⇒ ORCA;本地化键用 `ORCA.*`(官方 dll 同样如此)。
+public sealed class Orca : CharacterModel
 {
     // ── 基础数值 ────────────────────────────────────────────
     public override int StartingHp => 60;
