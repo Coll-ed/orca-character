@@ -67,6 +67,5 @@
   "ORCA_TRAMPLE.title": "践踏",
   "ORCA_VOID_RETURN.description": "场上所有角色无法回复生命；被阻止的回复按 {Ratio}% 转入[gold]嗜血龙剑[/gold]的伤害附加。",
   "ORCA_VOID_RETURN.line": "[sine]既然都要死，就别治了。[/sine]",
-  "ORCA_VOID_RETURN.title": "归墟",
-  "ORCA_BLOOD_BLADE.lifesteal_percent": "100"
+  "ORCA_VOID_RETURN.title": "归墟"
 }
