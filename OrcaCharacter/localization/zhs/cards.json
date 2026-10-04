@@ -17,7 +17,7 @@
   "ORCA_CODEX_IGNITION.description": "消耗 1 张手牌，使下次的[gold]龙族魔典[/gold]打出次数额外加 1。",
   "ORCA_CODEX_IGNITION.pick": "选择一张牌消耗",
   "ORCA_CODEX_IGNITION.title": "焚卷入典",
-  "ORCA_CRIMSON_TEMPER.description": "立即触发所有敌人身上的[gold]焚烧[/gold]，层数不减少。",
+  "ORCA_CRIMSON_TEMPER.description": "将当前场上所有存在的[gold]焚烧[/gold]立刻无消耗触发一次。",
   "ORCA_CRIMSON_TEMPER.title": "红莲淬",
   "ORCA_DEFEND.description": "获得{Block:diff()}点格挡。",
   "ORCA_DEFEND.title": "防御",

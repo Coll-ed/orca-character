@@ -112,20 +112,35 @@ public sealed class OrcaBloodScabbard : OrcaCard
 /// </summary>
 public sealed class OrcaCrimsonTemper : OrcaCard
 {
-    public override OrcaOrbForm OrbForm => OrcaOrbForm.Sword;
+    /// <summary>
+    ///     权威口径：「**无色**」。⚠️ 本模组里的"无色"**不是**原版的无色杂卡 ——
+    ///     见 <c>work/奥卡卡包集/备注.txt</c>：<i>"里面的无色不是指原版的无色杂卡，而是指不会改变形态的卡牌"</i>
+    ///     ⇒ 形态标签为 <see cref="OrcaOrbForm.None" />（打出时能量球不切形态）。
+    /// </summary>
+    public override OrcaOrbForm OrbForm => OrcaOrbForm.None;
 
-    public OrcaCrimsonTemper() : base(1, (CardType)2, (CardRarity)4, (TargetType)1) { }  // 1 费 · Skill · Rare · Self　（按卡牌说明1.txt：技能牌）
+    /// <summary>
+    ///     权威口径：「**消耗**，敲后去消耗」。
+    ///
+    ///     <para>实现方式：用**动态关键词**而不是在 <c>OnUpgrade</c> 里加词条 ——
+    ///     敲后返回空集即等于"去掉消耗"，不需要引擎提供"移除关键词"的 API。</para>
+    /// </summary>
+    public override IEnumerable<CardKeyword> CanonicalKeywords
+        => IsUpgraded ? Array.Empty<CardKeyword>() : new[] { CardKeyword.Exhaust };
+
+    public OrcaCrimsonTemper() : base(1, CardType.Skill, CardRarity.Rare, TargetType.Self) { }
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
-        // ⚠️ 旧的倍率联动已拆除（见类注释）。这里**显式记录"尚未实现"**，
-        //    而不是静默留空 —— 打出时日志里能直接看到缺口。
-        OrcaLog.Warn("[Orca] 红莲淬：★ 本卡尚未按权威口径实现"
-                     + "（应为「将场上所有【焚烧】立刻无消耗触发一次」）—— 本次打出不产生效果", 2);
-        await Task.CompletedTask;
+        // ★ 权威效果：「将当前场上所有存在的【焚烧】立刻无消耗触发一次」
+        //   实现走 OrcaBurnPower.TriggerAllNow —— 与回合结束的结算**共用同一段伤害逻辑**
+        //   （单一来源），只差"是否扣层"一个参数。
+        int n = await OrcaBurnPower.TriggerAllNow(ctx);
+        if (n == 0)
+            OrcaLog.Info("[Orca] 红莲淬：场上没有任何【焚烧】⇒ 本次无效果", 2);
     }
 
-    protected override void OnUpgrade() => CardCmd.ApplyKeyword(this, CardKeyword.Innate);
+    // 敲后的变化由上面的 CanonicalKeywords 动态表达（去掉【消耗】）⇒ 不需要额外 override。
 }
 
 // ── 已删除：OrcaCrimsonTemperPower（红莲淬的"消耗卡牌累加倍率"记账 Power）────────────
