@@ -50,6 +50,14 @@ public sealed class OrcaBloodScabbard : OrcaCard
         }
         // ★ 2026-10-04 修复：裸值 ⇒ `No suitable Formatter` ⇒ 整条卡面回退成原文。改为 DynamicVar。
         description.Add(new DynamicVar("HpLoss", (decimal)loss));
+        // ★★ 2026-10-04 二次修复（用户实机截图：卡面显示成 `消耗{Percent:diff()}%({HpLoss:diff()}血)`）：
+        //    文案用了**两个**带格式化器的占位符，而这里只注入了 `HpLoss` ⇒ 缺 `Percent`
+        //    ⇒ SmartFormat 对 `{Percent:diff()}` 报 No suitable Formatter ⇒ **整条**卡面回退成原文。
+        //    ⚠️ 两条教训：
+        //      ① 一个键缺失就整条崩，不存在"只坏那一处"的中间状态；
+        //      ② 核对必须按【本卡类自己声明了什么】，不能全工程搜字符串 ——
+        //         那样会被别的卡的声明骗过（`Percent` 在栖途里声明过，于是血焰剑鞘被误判为 OK）。
+        description.Add(new DynamicVar("Percent", (decimal)_percent));
     }
 
     public override OrcaOrbForm OrbForm => OrcaOrbForm.Sword;
