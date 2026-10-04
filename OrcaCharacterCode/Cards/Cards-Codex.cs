@@ -97,7 +97,7 @@ public sealed class OrcaCodexEmber : OrcaCard
 
     public override OrcaOrbForm OrbForm => OrcaOrbForm.Codex;
 
-    public OrcaCodexEmber() : base(2, (CardType)3, (CardRarity)3, (TargetType)1) { }  // 2 费 · Power · Uncommon · Self
+    public OrcaCodexEmber() : base(1, (CardType)3, (CardRarity)3, (TargetType)1) { }  // 1 费 · Power · Uncommon · Self　（按卡牌说明1.txt：1能量）
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {

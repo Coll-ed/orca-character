@@ -199,7 +199,7 @@ public sealed class OrcaTrample : OrcaCard
 {
     public override OrcaOrbForm OrbForm => OrcaOrbForm.Dragon;
 
-    public OrcaTrample() : base(1, (CardType)1, (CardRarity)3, (TargetType)3) { }   // 1 费 · Attack · Uncommon · AllEnemies
+    public OrcaTrample() : base(1, (CardType)1, (CardRarity)2, (TargetType)3) { }   // 1 费 · Attack · Common · AllEnemies　（按卡牌说明1.txt：白卡）
 
     protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new DamageVar(8m, (ValueProp)8) };
 

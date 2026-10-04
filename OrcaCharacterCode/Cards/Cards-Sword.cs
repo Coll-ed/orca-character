@@ -96,7 +96,7 @@ public sealed class OrcaCrimsonTemper : OrcaCard
 {
     public override OrcaOrbForm OrbForm => OrcaOrbForm.Sword;
 
-    public OrcaCrimsonTemper() : base(1, (CardType)3, (CardRarity)4, (TargetType)1) { }  // 1 费 · Power · Rare · Self
+    public OrcaCrimsonTemper() : base(1, (CardType)2, (CardRarity)4, (TargetType)1) { }  // 1 费 · Skill · Rare · Self　（按卡牌说明1.txt：技能牌）
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
@@ -184,7 +184,7 @@ public sealed class OrcaFrenzySlash : OrcaCard
 {
     public override OrcaOrbForm OrbForm => OrcaOrbForm.Sword;
 
-    public OrcaFrenzySlash() : base(3, (CardType)2, (CardRarity)3, (TargetType)1) { }  // 3 费 · Skill · Uncommon · Self
+    public OrcaFrenzySlash() : base(2, (CardType)1, (CardRarity)3, (TargetType)1) { }  // 2 费 · Attack · Uncommon · Self　（按卡牌说明1.txt：2费/攻击牌）
 
     /// <summary>★ 未升级时带**虚无**（用户口径）；敲后由 <see cref="OnUpgrade" /> 去掉。</summary>
     public override IEnumerable<CardKeyword> CanonicalKeywords => new[] { CardKeyword.Ethereal };

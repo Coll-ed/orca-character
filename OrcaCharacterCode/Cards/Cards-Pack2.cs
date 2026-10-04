@@ -166,8 +166,8 @@ public sealed class OrcaRollingFlame : OrcaCard
     /// <summary>★ 无色 = **不改变**能量球形态。</summary>
     public override OrcaOrbForm OrbForm => OrcaOrbForm.None;
 
-    /// <summary>1 费 · Attack · Common · AllEnemies。</summary>
-    public OrcaRollingFlame() : base(1, (CardType)1, (CardRarity)2, (TargetType)3) { }
+    /// <summary>2 费 · Attack · Common · AllEnemies　（按卡牌说明2.txt：2费）。</summary>
+    public OrcaRollingFlame() : base(2, (CardType)1, (CardRarity)2, (TargetType)3) { }
 
     protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new DamageVar(4m, (ValueProp)8) };
 
