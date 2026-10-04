@@ -181,7 +181,7 @@ internal static class OrcaKeyword
 
     /// <summary>「栖途」。</summary>
     internal static readonly OrcaCardKeyword Homestead = new(
-        "HOMESTEAD", "栖途", "战斗结束后，将你 25%（敲后 50%）的战斗临时生命上限转化为真实生命上限。");
+        "HOMESTEAD", "栖途", "战斗结束后，将你的一部分战斗临时生命上限转化为真实生命上限（比例随卡牌升级提高）。");
 
     /// <summary>「归墟」。</summary>
     internal static readonly OrcaCardKeyword VoidReturn = new(

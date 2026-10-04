@@ -11,7 +11,7 @@
   "ORCA_EXTRA_TURN_POWER.title": "额外回合",
   "ORCA_HEAL_BONUS_POWER.description": "获得 20% 额外治疗加成；每消耗一张牌，本场战斗再 +10%（层数即当前总加成）。",
   "ORCA_HEAL_BONUS_POWER.title": "焚文",
-  "ORCA_HOMESTEAD_POWER.description": "战斗结束后，将你 25%（敲后 50%）的战斗临时生命上限转化为真实生命上限。",
+  "ORCA_HOMESTEAD_POWER.description": "战斗结束后，将你的一部分战斗临时生命上限转化为真实生命上限（比例随卡牌升级提高）。",
   "ORCA_HOMESTEAD_POWER.title": "栖途",
   "ORCA_KILLING_INTENT_POWER.description": "你的下一张**攻击牌**会额外打出一次。",
   "ORCA_KILLING_INTENT_POWER.title": "杀意",

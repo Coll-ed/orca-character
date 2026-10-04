@@ -3,6 +3,8 @@ using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Localization.DynamicVars;
 using MegaCrit.Sts2.Core.Models;
 
 namespace OrcaCharacter;
@@ -35,6 +37,21 @@ public sealed class OrcaBloodNirvana : OrcaCard
     public OrcaBloodNirvana()
         : base(3, CardType.Power, CardRarity.Rare, TargetType.Self)
     {
+    }
+
+    /// <summary>
+    ///     ★ 把回复比例注进卡面（<c>ORCA_BLOOD_NIRVANA.description</c> 里的 <c>{HealPercent:diff()}</c>）。
+    ///
+    ///     <para><b>为什么必须有这一段</b>（审计 §2.1.1）：卡面文案只有一个键
+    ///     <c>{卡id}.description</c>，写死的数字**升级前后一模一样**；且带格式化器的占位符
+    ///     只要缺一个键，SmartFormat 就报 <c>No suitable Formatter</c> ⇒ **整条卡面**回退成原文。</para>
+    ///
+    ///     <para><b>单一来源</b>：数值取自 <see cref="OrcaBloodNirvanaPower.HealRatioDisplay" />
+    ///     （= 结算用的 <c>HealRatio</c> × 100），卡面与结算**不可能脱钩**。</para>
+    /// </summary>
+    protected override void AddExtraArgsToDescription(LocString description)
+    {
+        description.Add(new DynamicVar("HealPercent", OrcaBloodNirvanaPower.HealRatioDisplay));
     }
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)

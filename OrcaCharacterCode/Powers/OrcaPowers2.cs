@@ -93,17 +93,6 @@ public sealed class OrcaEmberWingPower : PowerModel
 }
 
 /// <summary>
-///     ★ 睥睨（卡牌）的 Power —— **下 1 张卡牌额外打出一次**。
-///
-///     <para>用户口径：<i>"下 1 张卡牌额外打出一次，而后将其消耗并抽取 1 张卡牌，
-///     并为所有敌人附加 1 层【焚烧】"</i>。</para>
-///
-///     <para>挂点完全照抄原版 <see cref="DuplicationPower" />：
-///     <c>ModifyCardPlayCount</c> 返回 <c>playCount + 1</c>，
-///     再用配对的 <c>AfterModifyingCardPlayCount</c> 把层数减掉（一次性）。
-///     "消耗那张牌 + 抽 1 张 + 全体焚烧" 是在<b>卡牌那一侧</b>结算的（见 <see cref="OrcaOverlookCard"/>）。</para>
-/// </summary>
-/// <summary>
 ///     ★★★ 睥睨的 Power —— **下 1 张打出的牌额外打出一次（总共 1 次，不分牌型）**。
 ///
 ///     <para>2026-09-23 口径纠正（用户：「设计里面应该是：**只能额外打出一张牌**，
@@ -114,6 +103,10 @@ public sealed class OrcaEmberWingPower : PowerModel
 ///     <para>挂点照抄原版 <see cref="DuplicationPower" />：
 ///     <c>ModifyCardPlayCount</c> 返回 <c>playCount + 1</c>，
 ///     再用配对的 <c>AfterModifyingCardPlayCount</c> 把层数减掉（一次性）。</para>
+///
+///     <para>⚠️ "抽 1 张 + 全体 1 层焚烧"由**卡牌那一侧**结算（<see cref="OrcaOverlook" />）；
+///     卡面的 <c>ORCA_OVERLOOK.description</c> 已按审计 §2.2-O1 改成与实现一致
+///     （旧文案承诺的"消耗手牌"与"三件套"本类与那张卡都没做）。</para>
 /// </summary>
 public sealed class OrcaOverlookPower : PowerModel
 {
@@ -252,10 +245,10 @@ public sealed class OrcaDragonDignityPower : PowerModel
 
 /// <summary>
 ///     ★ 浴血涅槃（卡牌）的 Power —— 本回合内**受到致命伤害时**：
-///     消耗所有临时生命上限，回复 40%（消耗上限，向下取整）的生命。
+///     消耗所有临时生命上限，回复 50%（消耗上限，向下取整）的生命。
 ///
 ///     <para>用户口径：<i>"本回合当你受到致命伤害时，消耗所有临时生命上限，
-///     回复 40% 消耗上限（具体数值向下取整）的生命"</i>；台词 <i>"杀不死我的，我会更强大！"</i></para>
+///     回复 50% 消耗上限（具体数值向下取整）的生命"</i>；台词 <i>"杀不死我的，我会更强大！"</i></para>
 ///
 ///     <para><b>怎么拦下致命伤</b>：照抄原版 <see cref="IntangiblePower" /> 的**两段式拆分**——
 ///     <list type="number">
@@ -267,8 +260,19 @@ public sealed class OrcaDragonDignityPower : PowerModel
 /// </summary>
 public sealed class OrcaBloodNirvanaPower : PowerModel
 {
-    /// <summary>回复比例（用户口径：消耗上限的 40%）。</summary>
-    private const decimal HealRatio = 0.5m;   // ★ 设计原文："回复50%消耗上限"
+    /// <summary>
+    ///     回复比例（消耗上限的 50%）。
+    ///     权威：50%（卡牌包2\卡牌说明2.txt L3「回复50%消耗上限（具体数值向下取整）的生命」）。
+    ///     ★ 卡面（<c>ORCA_BLOOD_NIRVANA.description</c> 的 <c>{HealPercent:diff()}</c>）经
+    ///     <see cref="HealRatioDisplay" /> 读这一个常量 ⇒ 改这里卡面跟着变，不再是两处各写一份。
+    /// </summary>
+    internal const decimal HealRatio = 0.5m;
+
+    /// <summary>
+    ///     同一比例转成的**百分点数**（0.5m ⇒ 50），仅供卡面显示 ——
+    ///     卡面文案里带格式化器的占位符必须由 <c>DynamicVar</c> 注入（裸值会 <c>No suitable Formatter</c>）。
+    /// </summary>
+    internal const decimal HealRatioDisplay = HealRatio * 100m;
 
     /// <summary>本帧是否刚拦下一次致命伤（由纯函数打标、由 Task 钩子消费）。</summary>
     private bool _pending;
