@@ -12,6 +12,6 @@
       "min_version": "v3.4.7"
     }
   ],
-  "affects_gameplay": false,
+  "affects_gameplay": true,
   "min_game_version": "0.111.0"
 }
