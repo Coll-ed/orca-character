@@ -184,3 +184,65 @@ internal static class OrcaCardLibraryPatch
 {
     private static void Postfix(NCardLibrary __instance) => OrcaCardLibraryInjector.Inject(__instance);
 }
+
+/// <summary>
+///     ★★★ **让"起始专属卡"在百科里不再显示为锁定**（用户 2026-10-04 实测反馈：
+///     「龙族魔典与嗜血龙剑在百科都是被锁定状态」）。
+///
+///     <para><b>根因</b>（反编译 <c>NCardLibraryGrid</c> 逐行实据）：
+///     <code>
+///     public void RefreshVisibility()
+///     {
+///         _seenCards = SaveManager.Instance.Progress.DiscoveredCards.ToHashSet();
+///         UnlockState unlockState = SaveManager.Instance.GenerateUnlockStateFromProgress();
+///         _unlockedCards = ModelDb.AllCardPools
+///             .Select(p =&gt; p.GetUnlockedCards(unlockState, CardMultiplayerConstraint.None))
+///             .SelectMany(c =&gt; c).ToHashSet();
+///     }
+///
+///     protected override ModelVisibility GetCardVisibility(CardModel card)
+///     {
+///         if (!_unlockedCards.Contains(card)) return ModelVisibility.Locked;   // ← 锁定
+///         ...
+///     }
+///     </code>
+///     <c>GetUnlockedCards</c> 内部走 <c>FilterThroughEpochs(unlockState, AllCards)</c>，
+///     而 <see cref="OrcaCardPool" /> 为了「起始专属卡不进随机池」在那里
+///     <c>RemoveAll(OrcaBloodSword / OrcaDragonCodex)</c> ⇒ 这两张卡不在
+///     <c>_unlockedCards</c> 里 ⇒ 百科判为 <c>Locked</c>。</para>
+///
+///     <para><b>为什么不是改卡池</b>：用户口径（2026-10-04）明确要**保留"唯一卡"定位**
+///     —— 它们不该出现在战斗奖励与商店里。而 <c>FilterThroughEpochs</c> 是同时作用于
+///     "奖励/商店"与"百科解锁状态"的唯一那个点，动它就两头一起变
+///     ⇒ 所以改为在**百科这一侧**补回来（本补丁），卡池的排除原封不动。</para>
+///
+///     <para><b>作用域</b>：只往集合里**加**我们这两张，不删任何东西，
+///     也不碰其它角色/其它模组的卡 ⇒ 出问题也只影响本角色的百科显示。</para>
+/// </summary>
+[HarmonyPatch(typeof(NCardLibraryGrid), "RefreshVisibility")]
+internal static class OrcaLibraryUnlockPatch
+{
+    /// <summary><c>NCardLibraryGrid</c> 里那个私有的已解锁集合。</summary>
+    private const string UnlockedCardsField = "_unlockedCards";
+
+    private static void Postfix(NCardLibraryGrid __instance)
+    {
+        try
+        {
+            var field = AccessTools.Field(typeof(NCardLibraryGrid), UnlockedCardsField);
+            if (field?.GetValue(__instance) is not HashSet<CardModel> unlocked)
+            {
+                OrcaLog.Warn("[Orca] 百科解锁：拿不到 _unlockedCards（版本可能变了，卡会显示锁定）", 2);
+                return;
+            }
+
+            // 起始专属卡：被排除出随机池 ⇒ 不在 GetUnlockedCards 里 ⇒ 需在此补回
+            unlocked.Add(ModelDb.Card<OrcaBloodSword>());
+            unlocked.Add(ModelDb.Card<OrcaDragonCodex>());
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 百科解锁补丁失败（卡会显示锁定）：{ex.Message}", 2);
+        }
+    }
+}
