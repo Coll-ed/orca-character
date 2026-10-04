@@ -48,18 +48,23 @@ namespace OrcaCharacter;
 internal static class OrcaSceneSkin
 {
     /// <summary>
-    ///     SpineSprite 上那个"当前动画"的属性名。
-    ///     场景文件里就是这么写的（<c>scenes/rest_site/characters/orca_rest_site.tscn</c> 的
-    ///     <c>preview_animation = "-- Empty --"</c>）。
+    ///     商店待机动画名。**三处同源，不是我编的**：
+    ///     ① 皮肤定义 <c>skins/orca/&lt;皮肤&gt;/skin.json</c> 的 <c>merchant.animation</c>；
+    ///     ② 引擎自己的 <c>NMerchantCharacter._Ready</c> 里写死的
+    ///        <c>PlayAnimation("relaxed_loop", loop: true)</c>；
+    ///     ③ 场景 <c>scenes/merchant/characters/orca_merchant.tscn</c> 的 <c>preview_animation</c>。
     /// </summary>
-    private const string AnimationProperty = "preview_animation";
+    internal const string MerchantIdleAnimation = "relaxed_loop";
 
     /// <summary>
     ///     把 <paramref name="skeletonPath" /> 套到这棵子树里的 SpineSprite 上，
-    ///     并**保留它原本的动画**。
+    ///     并在换完之后**用运行时的动画 API 重新驱动动画**。
     /// </summary>
-    /// <returns>成功套上的 SpineSprite 个数（0 = 没找到或未就绪）。</returns>
-    internal static int Apply(Node root, string skeletonPath, string what)
+    /// <param name="animation">
+    ///     换完骨架后要播的动画名。**必须给**，否则换骨架会把运行时动画状态清掉 ⇒ 人物静止
+    ///     （用户实测：「商店人物为静态」）。名字来自皮肤定义（与引擎自己写死的那个值一致）。
+    /// </param>
+    internal static int Apply(Node root, string skeletonPath, string animation, string what)
     {
         var res = ResourceLoader.Load<Resource>(skeletonPath);
         if (res == null)
@@ -80,15 +85,16 @@ internal static class OrcaSceneSkin
                 continue;
             }
 
-            // ★ 先记住当前动画（可能来自场景，也可能是代码按章节设的），换完骨架再设回去
-            var animation = sprite.Get(AnimationProperty);
-
             mega.SetSkeletonDataRes(new MegaSkeletonDataResource(res));
 
-            if (animation.VariantType == Variant.Type.String && !string.IsNullOrEmpty(animation.AsString()))
-            {
-                sprite.Set(AnimationProperty, animation);
-            }
+            // ★★ 2026-10-04 修：换完骨架**必须用运行时的动画状态 API 重新驱动**。
+            //    两个坑都踩过：
+            //      ① 设 `preview_animation` 没用 —— 那是**编辑器预览属性**，运行时读的是动画状态；
+            //      ② 原版 `_Ready` 里是 `RunWhenSpineReady(... => PlayAnimation(...))`，
+            //         spine 已就绪时那个回调**当场就执行**，动画在 `_Ready` 内已播上；
+            //         我的 Postfix 随后换骨架，把它清掉了 ⇒ 静止。
+            //    做法照抄引擎自己的 `NMerchantCharacter.PlayAnimation`：SetAnimation(anim, loop)。
+            mega.GetAnimationState().SetAnimation(animation, loop: true);
 
             applied++;
         }
@@ -116,7 +122,8 @@ internal static class OrcaMerchantSkinPatch
     {
         try
         {
-            var n = OrcaSceneSkin.Apply(__instance, OrcaSkin.MerchantSkeleton, "商店外观");
+            var n = OrcaSceneSkin.Apply(__instance, OrcaSkin.MerchantSkeleton,
+                                        OrcaSceneSkin.MerchantIdleAnimation, "商店外观");
             if (n > 0) OrcaLog.Info($"[Orca] 商店外观已套皮肤 → {OrcaSkin.Active}（{n} 个 SpineSprite）", 2);
         }
         catch (Exception ex)
@@ -126,7 +133,19 @@ internal static class OrcaMerchantSkinPatch
     }
 }
 
-/// <summary>篝火角色就绪时套皮肤（同上；动画由代码按章节设，所以更要"取回来再设回去"）。</summary>
+/// <summary>
+///     篝火角色就绪时套皮肤。
+///
+///     <para>⚠️ <b>2026-10-04：暂时【不换骨架】</b>。原因：篝火的动画是**按章节**的
+///     （皮肤定义 <c>rest.act0/act1/act2</c> = <c>overgrowth_loop</c>/<c>hive_loop</c>/<c>glory_loop</c>），
+///     而场景里写的是 <c>preview_animation = "-- Empty --"</c> ⇒ 动画由引擎代码按当前章节设。
+///     换骨架会把这个动画状态清掉，而"当前是第几章"我在这里拿不到
+///     ⇒ 硬换的结果就是**换成了奥卡但静止**（商店刚踩过同一个坑）。</para>
+///
+///     <para>⇒ 先按"商店验证通过的做法"把商店修对，再回来查引擎 <c>NRestSiteCharacter</c> 是按什么设章节动画的
+///     （反编译找它的 <c>PlayAnimation</c> 等价物），然后这里照抄一次。**在此之前保持不动** ——
+///     "原版铁甲战士但会动"比"奥卡但静止"更容易发现问题。</para>
+/// </summary>
 [HarmonyPatch(typeof(NRestSiteCharacter), "_Ready")]
 internal static class OrcaRestSiteSkinPatch
 {
@@ -134,12 +153,14 @@ internal static class OrcaRestSiteSkinPatch
     {
         try
         {
-            var n = OrcaSceneSkin.Apply(__instance, OrcaSkin.RestSkeleton, "篝火外观");
-            if (n > 0) OrcaLog.Info($"[Orca] 篝火外观已套皮肤 → {OrcaSkin.Active}（{n} 个 SpineSprite）", 2);
+            // TODO(篝火章节动画): 查清 NRestSiteCharacter 怎么按章节驱动动画后，照抄这里的做法：
+            //   OrcaSceneSkin.Apply(__instance, OrcaSkin.RestSkeleton, <当前章节的动画名>, "篝火外观");
+            _ = __instance;
+            OrcaLog.Info("[Orca] 篝火外观：暂未换骨架（章节动画待接，见 OrcaSceneSkin.cs 注释）", 2);
         }
         catch (Exception ex)
         {
-            OrcaLog.Warn($"[Orca] 篝火外观套皮肤失败（不影响篝火功能）：{ex.Message}", 2);
+            OrcaLog.Warn($"[Orca] 篝火外观检查出错（不影响篝火功能）：{ex.Message}", 2);
         }
     }
 }
