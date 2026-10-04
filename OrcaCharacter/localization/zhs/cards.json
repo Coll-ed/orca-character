@@ -29,7 +29,7 @@
   "ORCA_DRAGON_DIGNITY.title": "龙之威仪",
   "ORCA_EMBER_CHASE.description": "造成{Damage:diff()}点伤害，并给予{Burn:diff()}层[gold]焚烧[/gold]。",
   "ORCA_EMBER_CHASE.title": "逐焰",
-  "ORCA_EMBER_WING.description": "获得 1 层[gold]翱翔[/gold]。{Expire}",
+  "ORCA_EMBER_WING.description": "获得 1 层[gold]翱翔[/gold]（受到的伤害减半）。{Expire}",
   "ORCA_EMBER_WING.line": "[sine]翅膀，展开。[/sine]",
   "ORCA_EMBER_WING.title": "烬血之翼",
   "ORCA_FIRE_CLOAK.description": "获得{Block:diff()}点格挡；场上每存在 1 点[gold]焚烧[/gold]，额外获得 1 点格挡。",

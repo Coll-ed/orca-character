@@ -19,19 +19,19 @@ public sealed class OrcaEmberWing : OrcaCard
 
 	protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
 	{
-		await PowerCmd.Apply<SoarPower>(ctx, ((CardModel)this).Owner.Creature, 1m, ((CardModel)this).Owner.Creature, (CardModel)(object)this, false);
-		// 烬血之翼：获得 1 层【翱翔】（40%→50% 减伤由原版 SoarPower 提供）。
+		// ★ 改用【自写】翱翔：原版 SoarPower 是 sealed + StackType.Single ⇒ 不能继承、也不能减层。
+		await PowerCmd.Apply<OrcaSoarPower>(ctx, ((CardModel)this).Owner.Creature, 1m, ((CardModel)this).Owner.Creature, (CardModel)(object)this, false);
 		// 基础版额外挂"回合开始摘除"记号；敲后不挂（= 敲后只为"不消失"，与用户口径一致）。
 		if (!((CardModel)this).IsUpgraded)
 		{
 			await PowerCmd.Apply<OrcaEmberWingPower>(ctx, ((CardModel)this).Owner.Creature, 1m, ((CardModel)this).Owner.Creature, (CardModel)(object)this, false);
 		}
-		OrcaLog.Info("[Orca] 烬血之翼：获得 1 层【翱翔】（受到攻击伤害减半），" + (((CardModel)this).IsUpgraded ? "敲后·仅挨未格挡伤害时消失（回合开始不再消失）" : "基础·挨未格挡伤害或回合开始时消失"));
+		OrcaLog.Info("[Orca] 烬血之翼：获得 1 层【翱翔】（受到的伤害减半），" + (((CardModel)this).IsUpgraded ? "敲后·回合开始不再消失（挨未格挡伤害减一层）" : "基础·回合开始时消失（挨未格挡伤害减一层）"));
 	}
 
 	protected override void AddExtraArgsToDescription(LocString description)
 	{
-		description.Add("Expire", ((CardModel)this).IsUpgraded ? "\n当你受到敌人未被格挡的伤害时，翱翔消失。" : "\n当你受到敌人未被格挡的伤害，或你的回合开始时，翱翔消失。");
+		description.Add("Expire", ((CardModel)this).IsUpgraded ? "\n回合开始时不再消失。" : "\n你的回合开始时，翱翔消失。");
 	}
 
 	protected override void OnUpgrade()

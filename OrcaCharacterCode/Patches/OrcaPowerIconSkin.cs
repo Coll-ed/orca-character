@@ -33,14 +33,33 @@ internal static class OrcaPowerIconSkinPatch
     /// <summary>婚纱版图标的后缀（板甲版无后缀，直接走原版路径）。</summary>
     private const string WeddingSuffix = "_wedding";
 
+    /// <summary>
+    ///     ★ 自写「翱翔」(<see cref="OrcaSoarPower" />) 的 Id（小写形态）。
+    ///     它借用**原版翱翔的图标**（用户口径：「图标还是翱翔图标而已」）——
+    ///     因为 <c>PackedIconPath</c> 是按 Id 约定找图的，自写类的 Id 找不到任何图，
+    ///     所以在这里改道。Id 规则（实测）：类名 <c>FlutterPower</c> → <c>FLUTTER_POWER</c>。
+    /// </summary>
+    private const string OrcaSoarPowerId = "orca_soar_power";
+
+    /// <summary>原版翱翔的图标路径（游戏本体 pck 内，已实测存在）。</summary>
+    private static string OrcaSoarPowerIconPath =>
+        ImageHelper.GetImagePath("atlases/power_atlas.sprites/soar_power.tres");
+
     private static bool Prefix(PowerModel __instance, ref string __result)
     {
         try
         {
-            if (!OrcaSkin.IsWedding) return true;                 // ★ 板甲 = 放行原样
-
             var id = __instance?.Id.Entry.ToLowerInvariant();
             if (string.IsNullOrEmpty(id)) return true;
+
+            // ★ 自写翱翔：借原版翱翔的图标（与皮肤无关，先于皮肤判断处理）
+            if (id == OrcaSoarPowerId)
+            {
+                __result = OrcaSoarPowerIconPath;
+                return false;
+            }
+
+            if (!OrcaSkin.IsWedding) return true;                 // ★ 板甲 = 放行原样
 
             var wedding = id + WeddingSuffix;
             var path = ImageHelper.GetImagePath("atlases/power_atlas.sprites/" + wedding + ".tres");

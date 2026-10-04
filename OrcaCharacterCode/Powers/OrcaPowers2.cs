@@ -32,24 +32,24 @@ namespace OrcaCharacter;
 // ═══════════════════════════════════════════════════════════════════════
 
 /// <summary>
-///     ★ 烬血之翼（卡牌）的 Power —— **受到敌人攻击时减少 50% 伤害**。
+///     ★ 烬血之翼（卡牌）的**记号** Power —— 它自己**不提供任何减伤**。
 ///
-///     <para>用户口径：<i>"展开龙的翅膀，受到敌人的攻击时减少 50% 受到伤害"</i>；
-///     敲后 <i>"变为必定闪避伤害"</i> ⇒ 升级版改用原版 <see cref="IntangiblePower" /> 的写法
-///     （伤害上限压到 1 点），见 <see cref="OrcaEmberWingCard"/> 的 OnUpgrade。</para>
+///     <para><b>减伤与减层现在全在 <see cref="OrcaSoarPower" />（自写翱翔）里</b>，
+///     因为原版翱翔是 <c>sealed</c> + <c>StackType.Single</c>，不能继承也不能减层。</para>
 ///
-///     <para>挂点 = <see cref="ModifyDamageMultiplicative" />，与易伤同一个钩子、方向相反：
-///     易伤返回 1.5m（×1.5），我们返回 0.5m（×0.5）。两者可叠加。</para>
+///     <para>本 Power 只干一件事：**在下个奥卡回合开始时把翱翔摘掉**（基础版专属；
+///     敲后不挂本记号 ⇒ 翱翔不再因回合开始而消失）。</para>
+///
+///     <para>「挨未格挡伤害 ⇒ 减一层」**不在这里**：那由 <c>OrcaSoarPower.AfterDamageReceived</c>
+///     自己 <c>PowerCmd.Decrement</c> 完成。若在此处也做一遍"整个移除"，
+///     会抢在减层之前抹掉翱翔，多层时行为就错了。</para>
 /// </summary>
 public sealed class OrcaEmberWingPower : PowerModel
 {
-    // ★★★ 2026-09-23 改造（卡包2 原文：「获得一层**翱翔**，持续至下回合奥卡回合开始时翱翔消失」
-    //     + 「敲后完美契合词条（怪物-猫头鹰法官的翱翔效果）」）：
-    //     减伤**不再由本 Power 提供** —— 原文要的是**原版「翱翔」**，
-    //     所以改为施加原版 `SoarPower`（反编译实据：它的 ModifyDamageMultiplicative 返回
-    //     `DynamicVars["DamageDecrease"].BaseValue / 100m` = 50/100 = **0.5**，机制与我们要的完全一致，
-    //     而且卡面能拿到正确的「翱翔」词条与 tooltip）。
-    //     本 Power 降级为**纯记号**：只负责在**下回合奥卡回合开始时**把翱翔摘掉。
+    // ★ 2026-10-04（用户口径）：「我们不是照抄，我们是玩家，因此逻辑很简单：怪物的所有伤害减少50%」
+    //   ⇒ 减伤改为由自写 OrcaSoarPower 提供，且**去掉原版那句 `if (!props.IsPoweredAttack()) return 1m;`**
+    //     —— 那行只挡"攻击牌造成的伤害"，我们要的是**一切伤害减半**。
+    //   本 Power 由此彻底降级为纯记号（见类注释）。
 
     public override PowerType Type => PowerType.Buff;
 
@@ -67,7 +67,7 @@ public sealed class OrcaEmberWingPower : PowerModel
         {
             if (Owner == null || player != Owner.Player) return;
 
-            var soar = Owner.GetPower<SoarPower>();
+            var soar = Owner.GetPower<OrcaSoarPower>();
             if (soar != null) await PowerCmd.Remove(soar);
             await PowerCmd.Remove(this);
 
@@ -79,39 +79,17 @@ public sealed class OrcaEmberWingPower : PowerModel
         }
     }
 
-    /// <summary>
-    ///     ★ A5（2026-10-01）：卡面文案承诺的第 2 个消失条件 ——
-    ///     「当你受到敌人未被格挡的伤害时，翱翔消失」（见 OrcaEmberWing.AddExtraArgsToDescription ✓）
-    ///     —— 实现里原本**完全没有这一条** ✗ ⇒ 文案与行为不一致 ✓ 本次补上 ✓
-    ///
-    ///     <para>钩子与守卫逐条照抄树里现成的 <c>OrcaRelic.AfterDamageReceived</c> ✓
-    ///     （只关心自己 / 自己打自己不算 / 被完全格挡 = 没受伤 ✓）。</para>
-    ///
-    ///     <para>⚠️ 另一套口径（会话记录里更晚的一版）：敲后改为"按层数消耗（挨未格挡伤害 -1 层）"✗
-    ///     —— 本实现取**官方那一版的卡面文案**为准 ✓（若要改成按层数消耗，改这一处即可 ✓）。</para>
-    /// </summary>
-    public override async Task AfterDamageReceived(
-        PlayerChoiceContext ctx, Creature target,
-        DamageResult result, ValueProp props, Creature? dealer, CardModel? cardSource)
-    {
-            /*TOGGLE-OFF-A5*/ return;
-        try
-        {
-            var me = Owner;
-            if (me == null || target != me) return;                        // 只关心自己 ✓
-            if (dealer != null && dealer == me) return;                    // 自己打自己 ≠ 被敌人打 ✓
-            if (result.UnblockedDamage <= 0) return;                       // 被完全格挡 = 没受伤 ✓
-
-            var soar = Owner.GetPower<SoarPower>();
-            if (soar != null) await PowerCmd.Remove(soar);
-            await PowerCmd.Remove(this);
-            OrcaLog.Info($"[Orca] 烬血之翼：挨了 {result.UnblockedDamage} 点未格挡伤害 ⇒ 【翱翔】已消失", 2);
-        }
-        catch (Exception ex)
-        {
-            OrcaLog.Warn($"[Orca] 烬血之翼·挨伤害摘除出错（翱翔可能残留）：{ex.Message}", 2);
-        }
-    }
+    // ★ 2026-10-04 删除：原先这里 override AfterDamageReceived，
+    //   作用是"挨到未格挡伤害 ⇒ 把翱翔整个移除"（当时被 /*TOGGLE-OFF-A5*/ 关着）。
+    //
+    //   现改为由【自写的 OrcaSoarPower】自己负责"受到的伤害减半 + 每挨一次未格挡伤害减一层"
+    //   （用户口径 2026-10-04：「我们不是照抄，我们是玩家，因此逻辑很简单：怪物的所有伤害减少50%」
+    //     + 规格卡牌说明2.txt：「翱翔存在时会为奥卡提供50%的减伤，当奥卡受到敌人未被格挡的
+    //       生命伤害时减少一层」）。
+    //
+    //   ⇒ 这一段必须【删除而不是打开】：若保留，它会在 OrcaSoarPower 减层之前
+    //     把翱翔整个抹掉，违背"减少一层"的规格（1 层时两者结果相同，多层时行为就错了）。
+    //   ⇒ 本记号 Power 今后只负责一件事：**在你的回合开始时移除翱翔**。
 }
 
 /// <summary>

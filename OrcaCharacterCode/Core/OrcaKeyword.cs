@@ -162,9 +162,9 @@ internal static class OrcaKeyword
 
     // ── 以下为 2026-09-23「彻底检测」补齐的 buff（此前卡面提到却没有浮窗、buff 自己也没有文案）──
 
-    /// <summary>「翱翔」（**原版** <c>SoarPower</c>，烬血之翼借用；原版没给它做关键词，只能我们补）。</summary>
+    /// <summary>「翱翔」（自写的 <c>OrcaSoarPower</c>，烬血之翼专用；可叠层、挨伤害减一层）。</summary>
     internal static readonly OrcaCardKeyword Soar = new(
-        "SOAR", "翱翔", "受到攻击时伤害减半。");
+        "SOAR", "翱翔", "受到的伤害减半；每受到一次未格挡的伤害减少一层。");
 
     /// <summary>「生死一线」（熔渊枯骨）。</summary>
     internal static readonly OrcaCardKeyword MoltenBone = new(
