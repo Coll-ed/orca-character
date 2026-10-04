@@ -38,6 +38,18 @@ internal static class OrcaMerchantSkinPatch
     /// <summary>SpineSprite 子节点的名字（我们的场景里就叫这个；原版场景也是）。</summary>
     private const string SpineChildName = "SpineSprite";
 
+    /// <summary>
+    ///     商店待机动画的**属性名**。场景里就是这么写的
+    ///     （<c>scenes/merchant/characters/orca_merchant.tscn</c> 里 <c>preview_animation = "relaxed_loop"</c>）。
+    /// </summary>
+    private const string IdleAnimationProperty = "preview_animation";
+
+    /// <summary>
+    ///     商店待机动画名。**与皮肤定义同源**：<c>skins/orca/&lt;皮肤&gt;/skin.json</c> 里的
+    ///     <c>merchant.animation</c> 就是 <c>relaxed_loop</c>。
+    /// </summary>
+    private const string IdleAnimation = "relaxed_loop";
+
     private static void Postfix(NMerchantCharacter __instance)
     {
         try
@@ -73,6 +85,11 @@ internal static class OrcaMerchantSkinPatch
             }
 
             mega.SetSkeletonDataRes(new MegaSkeletonDataResource(res));
+
+            // ★ 2026-10-04 补：换骨架后必须**重新指定动画**，否则新骨架不会自动播
+            //   ⇒ 人物站住不动（用户实测反馈：「商店人物为静态」）。
+            //   场景原本是靠 `preview_animation = "relaxed_loop"` 播的，换骨架把这一步覆盖掉了。
+            sprite.Set(IdleAnimationProperty, IdleAnimation);
             applied++;
         }
 
