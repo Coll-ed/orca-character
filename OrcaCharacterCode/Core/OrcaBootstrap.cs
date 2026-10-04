@@ -29,7 +29,7 @@ public static class OrcaBootstrap
     ///     「我曾同时存在 `src` / `src-s2` / `src-fresh`，并**从错误的树编译了一整轮**」——
     ///     卡死这种问题本来就无法从日志判断，再叠上"跑错版本"就彻底无法归因。</para>
     /// </summary>
-    public const string BuildTag = "12of12-handwritten";
+    public const string BuildTag = "EXP-B0-affectsgameplay-false";
 
     private static bool _initialized;
 
