@@ -110,82 +110,12 @@ internal static class OrcaOrobasTouchPatch
     }
 }
 
-/// <summary>
-///     ★ **逆鳞的获取途径** —— 用户口径（2026-09-17 二改）：<i>"逆鳞是击败 BOSS 后有概率掉落"</i>。
-///
-///     <para>一改是"BOSS 战专门出"（必给），用户实测后改成**概率掉落**。
-///     判定走 <c>player.PlayerRng.Rewards</c>（run 种子派生的、存档内的奖励随机流），
-///     而**不是** <c>Rng.Chaotic</c> ⇒ 同种子可复现、读档重进不会重掷。掉率见 <see cref="DropChance" />。</para>
-///
-///     <para>实现挂在 <see cref="OrcaBloodline" /> 的 <c>AfterCombatVictory</c>（见该类注释）。</para>
-/// </summary>
-internal static class OrcaReverseScaleSource
-{
-    /// <summary>★ BOSS 战胜利后掉落【逆鳞】的概率（0~1）。**要调掉率只改这一个数。**</summary>
-    internal const double DropChance = 0.5;
-
-    /// <summary>BOSS 战胜利后按概率把逆鳞塞进牌组。</summary>
-    internal static void GrantOnBossVictory(Player? player, CombatRoom? room)
-    {
-        try
-        {
-            if (room == null || room.RoomType != RoomType.Boss) return;   // 只有 BOSS 房
-            if (player == null || player.Character is not Orca) return;   // 只有奥卡
-
-            // 已有就不再判定（省一次随机数，也避免日志让人误以为"掉了但没给"）
-            var deck = player.Deck;
-            if (deck != null && deck.Cards.Any(c => c is OrcaReverseScale))
-            {
-                OrcaLog.Info("[Orca] BOSS 战胜利：牌组里已有【逆鳞】⇒ 不做掉落判定", 2);
-                return;
-            }
-
-            double roll = player.PlayerRng.Rewards.NextDouble();
-            if (roll >= DropChance)
-            {
-                OrcaLog.Info($"[Orca] BOSS 战胜利：逆鳞掉落判定未命中（{roll:0.###} ≥ 掉率 {DropChance:0.###}）", 2);
-                return;
-            }
-
-            OrcaLog.Info($"[Orca] BOSS 战胜利：逆鳞掉落判定命中（{roll:0.###} < 掉率 {DropChance:0.###}）", 2);
-            TaskHelper.RunSafely(OrcaPack2Acquisition.GrantToDeck(player, ModelDb.Card<OrcaReverseScale>(), "BOSS 战掉落"));
-
-            // ★★ 2026-09-23 用户口径：「睥睨的稀有度也是和逆鳞一样，只在 BOSS 奖励里面掉落」
-            //    ⇒ 与逆鳞同一套机制：**各自独立掷点**（可能都掉 / 掉一张 / 都不掉）。
-            //    同理已把睥睨加进随机池排除名单（见 Pools.cs）。
-            GrantOverlookByRoll(player);
-        }
-        catch (Exception ex)
-        {
-            OrcaLog.Warn($"[Orca] BOSS 战给逆鳞失败：{ex.Message}", 2);
-        }
-    }
-    /// <summary>★ 睥睨的 BOSS 掉落判定（与逆鳞同一套掉率，独立掷点）。</summary>
-    private static void GrantOverlookByRoll(Player player)
-    {
-        try
-        {
-            var deck = player.Deck;
-            if (deck != null && deck.Cards.Any(c => c is OrcaOverlook))
-            {
-                OrcaLog.Info("[Orca] BOSS 战胜利：牌组里已有【睥睨】⇒ 不做掉落判定", 2);
-                return;
-            }
-
-            double roll = player.PlayerRng.Rewards.NextDouble();
-            if (roll >= DropChance)
-            {
-                OrcaLog.Info($"[Orca] BOSS 战胜利：睥睨掉落判定未命中（{roll:0.###} ≥ 掉率 {DropChance:0.###}）", 2);
-                return;
-            }
-
-            OrcaLog.Info($"[Orca] BOSS 战胜利：睥睨掉落判定命中（{roll:0.###} < 掉率 {DropChance:0.###}）", 2);
-            TaskHelper.RunSafely(OrcaPack2Acquisition.GrantToDeck(player, ModelDb.Card<OrcaOverlook>(), "BOSS 战掉落"));
-        }
-        catch (Exception ex)
-        {
-            OrcaLog.Warn($"[Orca] BOSS 战给睥睨失败：{ex.Message}", 2);
-        }
-    }
-
-}
+// ★ 2026-10-04 移除整段：原 OrcaReverseScaleSource（BOSS 战胜利按 0.5 概率给逆鳞、再独立掷点给睥睨）。
+//
+//   用户口径：「BOSS 专属奖励卡牌还是没掉落，去掉专属奖励吧，回归肉鸽随机属性」
+//   ⇒ 该"BOSS 专属奖励"机制整体删除：
+//       · OrcaRelic 里的 AfterCombatVictory override 已移除（回归基类行为）
+//       · 逆鳞(OrcaReverseScale) 与 睥睨(OrcaOverlook) 已移出随机池排除名单（见 Pools.cs）
+//         ⇒ 改为与其它卡一样，通过常规战斗奖励 / 商店随机获得
+//   删除原因不只是"没生效"：这两张卡被排除出随机池后，掉落是它们的**唯一**来源，
+//   来源失效即等于永远拿不到 —— 与其继续维护一条隐蔽的专属通道，不如回归统一随机。

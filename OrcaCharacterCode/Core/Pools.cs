@@ -138,10 +138,14 @@ public sealed class OrcaCardPool : CardPoolModel
         // 默认不启用（开关与"必须先补卡"的原因见 ExcludeSignatureCardsFromRandomPool 的长注释）
         if (!ExcludeSignatureCardsFromRandomPool) return list;
 
-        // ★ 排除清单（都不该出现在奖励/商店里）：
+        // ★ 排除清单（只留**起始专属卡**，它们不该出现在奖励/商店里）：
         //   · OrcaBloodSword / OrcaDragonCodex —— 起始专属卡（用户口径：唯一卡牌）
-        //   · OrcaReverseScale —— 第二版设计原文写明"**不可被获得**也不在初始卡组"
-        int removed = list.RemoveAll(c => c is OrcaBloodSword or OrcaDragonCodex or OrcaReverseScale or OrcaOverlook);
+        //
+        // ★ 2026-10-04 用户口径改：「BOSS 专属奖励卡牌还是没掉落，去掉专属奖励吧，回归肉鸽随机属性」
+        //   ⇒ 逆鳞(OrcaReverseScale) 与 睥睨(OrcaOverlook) **移出排除名单**，回到普通随机池，
+        //     与其它卡一样通过战斗奖励 / 商店获得。
+        //     它们原先的「BOSS 战胜利掉落」专属机制已随之移除（见 OrcaRelic / OrcaPack2Acquisition）。
+        int removed = list.RemoveAll(c => c is OrcaBloodSword or OrcaDragonCodex);
         OrcaLog.Info($"[Orca] 随机池过滤：排除起始专属/不可获得卡 {removed} 张 → 剩 {list.Count} 张"
                  + $"（类型分布 {string.Join("、", list.GroupBy(c => c.Type).Select(g => $"{g.Key}×{g.Count()}"))}）", 2);
         return list;

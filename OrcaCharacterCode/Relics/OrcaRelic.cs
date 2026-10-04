@@ -322,17 +322,11 @@ public sealed class OrcaBloodline : RelicModel
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    ///     ★ **逆鳞的获取途径**（用户口径 2026-09-17：「*逆鳞变成 BOSS 战专门出*」）。
-    ///
-    ///     <para>BOSS 战胜利 ⇒ 把【逆鳞】塞进牌组（已在牌组里就不重复给）。
-    ///     它仍**不在随机池**里（按设计原文"不可被获得"），所以这是它唯一的来源。</para>
-    /// </summary>
-    public override Task AfterCombatVictory(CombatRoom room)
-    {
-        OrcaReverseScaleSource.GrantOnBossVictory(Owner, room);
-        return Task.CompletedTask;
-    }
+    // ★ 2026-10-04 移除：原先这里 override AfterCombatVictory 调用
+    //   OrcaReverseScaleSource.GrantOnBossVictory（BOSS 战胜利按 0.5 概率给逆鳞/睥睨）。
+    //   用户口径：「BOSS 专属奖励卡牌还是没掉落，去掉专属奖励吧，回归肉鸽随机属性」
+    //   ⇒ 掉落机制整体移除；逆鳞与睥睨已放回普通随机池（见 Pools.cs），
+    //     通过常规战斗奖励 / 商店获得。此处不再 override，回归基类行为。
 
     /// <summary>③ 战斗结束：把本场临时加上去的血上限还原。</summary>
     public override async Task AfterCombatEnd(CombatRoom room)
