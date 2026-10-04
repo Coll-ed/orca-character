@@ -55,3 +55,6 @@ packages/
 Thumbs.db
 desktop.ini
 ehthumbs.db
+
+# Godot 导出暂存目录(每次 publish 重建,不入库)
+.godot/pck-stage/
