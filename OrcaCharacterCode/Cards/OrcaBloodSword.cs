@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Commands;
@@ -18,215 +17,237 @@ using MegaCrit.Sts2.Core.Nodes.Vfx;
 
 namespace OrcaCharacter;
 
+/// <summary>
+///     ★ **嗜血龙剑**（2 费 · 技能 · 稀有 · 己方）—— 银龙奥卡的核心机制牌。
+///
+///     <para><b>两种打出方式</b>：
+///     <list type="bullet">
+///       <item><b>主动打出</b>：失去最大生命的 <see cref="BaseLifePercent" />%（敲后
+///         <see cref="UpgradedLifePercent" />%），按失去量的一半累积「伤害附加」，**本次不造成伤害**；</item>
+///       <item><b>被狂躁打出</b>（回合结束自动打出）：对**全体敌人**造成等同于当前伤害附加的伤害。</item>
+///     </list></para>
+///
+///     <para><b>本文件是「重建源码树」的第 2 个文件</b>。改写前它是反编译直出，含
+///     <c>(CardModel)(object)this</c> 强转、14 行 <c>//IL_xxxx</c> 残留、
+///     两处 <c>DefaultInterpolatedStringHandler</c> **机器码**（本该是普通字符串插值），
+///     以及被反编译成数字的枚举。改后：枚举名化、机器码还原为插值字符串、字面量收敛为具名常量。</para>
+///
+///     <para>★ <b>行为等价已核</b>：反编译【官方基准 dll】可见官方此文件与我们改写前**逐行相同**
+///     （同样的 <c>2m</c>、同样的 5 处 <c>2</c>）⇒ 那些重复是原始源码风格，
+///     本次按「单一来源」收敛，**不改变任何数值与分支**。</para>
+/// </summary>
 public sealed class OrcaBloodSword : OrcaFrenzyCard
 {
-	private int _bonus;
+    /// <summary>基础代价：失去最大生命的百分比。</summary>
+    private const int BaseLifePercent = 20;
 
-	private int _lifePercent = 20;
+    /// <summary>敲后代价：失去最大生命的百分比。</summary>
+    private const int UpgradedLifePercent = 30;
 
-	private const int MaxHpPerKill = 2;
+    /// <summary>每击杀一个敌人获得的生命上限（卡面描述 / 结算 / 日志三处共用，单一来源）。</summary>
+    private const int MaxHpPerKill = 2;
 
-	public override OrcaOrbForm OrbForm => OrcaOrbForm.Sword;
+    /// <summary>「失去生命」转化为「伤害附加」的比例（一半）。卡面 Gain 与结算必须同一口径。</summary>
+    private const decimal BonusConversion = 0.5m;
 
-	internal int Bonus => _bonus;
+    /// <summary>卡面/浮窗里显示的"单敌吸血倍率"（详情见 嗜血龙剑·战况 浮窗）。</summary>
+    private const int LifestealPercentDisplay = 25;
 
-	internal int LifePercent => _lifePercent;
+    /// <summary>伤害附加（被狂躁打出时的伤害量）。</summary>
+    private int _bonus;
 
-	protected override bool IsPlayable
-	{
-		get
-		{
-			try
-			{
-				Player owner = ((CardModel)this).Owner;
-				Creature val = ((owner != null) ? owner.Creature : null);
-				if (val == null)
-				{
-					return true;
-				}
-				if ((int)Math.Floor((double)(val.MaxHp * _lifePercent) / 100.0) < val.CurrentHp)
-				{
-					return true;
-				}
-				OrcaSpeech.SayCapped(val, (VfxDuration)2, "swordRefuse", 1, "ORCA.banter.swordRefuse.1", "ORCA.banter.swordRefuse.2", "ORCA.banter.swordRefuse.3", "ORCA.banter.swordRefuse.4", "ORCA.banter.swordRefuse.5", "ORCA.banter.swordRefuse.6");
-				return false;
-			}
-			catch
-			{
-				return true;
-			}
-		}
-	}
+    /// <summary>当前代价百分比（敲后变成 <see cref="UpgradedLifePercent" />）。</summary>
+    private int _lifePercent = BaseLifePercent;
 
-	internal int MaxHpPerKillValue => 2;
+    public override OrcaOrbForm OrbForm => OrcaOrbForm.Sword;
 
-	internal int CurrentLifeCost
-	{
-		get
-		{
-			try
-			{
-				Player owner = ((CardModel)this).Owner;
-				Creature val = ((owner != null) ? owner.Creature : null);
-				if (val == null || val.MaxHp <= 0)
-				{
-					return 0;
-				}
-				int num = (int)Math.Floor((double)(val.MaxHp * _lifePercent) / 100.0);
-				int num2 = val.CurrentHp - 1;
-				return (num > num2) ? Math.Max(num2, 0) : num;
-			}
-			catch
-			{
-				return 0;
-			}
-		}
-	}
+    internal int Bonus => _bonus;
 
-	protected override IEnumerable<DynamicVar> CanonicalVars => Array.Empty<DynamicVar>();
+    internal int LifePercent => _lifePercent;
 
-	public override IEnumerable<CardKeyword> CanonicalKeywords => (IEnumerable<CardKeyword>)(object)new CardKeyword[1] { (CardKeyword)7 };
+    /// <summary>对外暴露的"每击杀 +生命上限"（<c>OrcaKeyword</c> 的龙剑战况浮窗要用，必须 internal）。</summary>
+    internal int MaxHpPerKillValue => MaxHpPerKill;
 
-	internal void AddBonus(int amount)
-	{
-		if (amount > 0)
-		{
-			_bonus += amount;
-			OrcaCardUi.Refresh((CardModel?)(object)this);
-		}
-	}
+    /// <summary>
+    ///     能不能打出：代价不能把自己打死（至少留 1 点生命）。
+    ///     打不出时说一句"卖血被拒"的台词（用户口径），并返回 false。
+    /// </summary>
+    protected override bool IsPlayable
+    {
+        get
+        {
+            try
+            {
+                var creature = Owner?.Creature;
+                if (creature == null) return true;                          // 取不到就不拦
+                if (LifeCostOf(creature.MaxHp) < creature.CurrentHp) return true;
 
-	public OrcaBloodSword()
-		: base(2, (CardType)2, (CardRarity)4, (TargetType)1)
-	{
-	}
+                OrcaSpeech.SayCapped(creature, VfxDuration.Short, "swordRefuse", 1,
+                    "ORCA.banter.swordRefuse.1", "ORCA.banter.swordRefuse.2", "ORCA.banter.swordRefuse.3",
+                    "ORCA.banter.swordRefuse.4", "ORCA.banter.swordRefuse.5", "ORCA.banter.swordRefuse.6");
+                return false;
+            }
+            catch
+            {
+                return true;                                                // 判定失败不拦牌
+            }
+        }
+    }
 
-	protected override void AddExtraArgsToDescription(LocString description)
-	{
-		//IL_0019: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0023: Expected O, but got Unknown
-		//IL_002f: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0039: Expected O, but got Unknown
-		//IL_0045: Unknown result type (might be due to invalid IL or missing references)
-		//IL_004f: Expected O, but got Unknown
-		//IL_0060: Unknown result type (might be due to invalid IL or missing references)
-		//IL_006a: Expected O, but got Unknown
-		//IL_007b: Unknown result type (might be due to invalid IL or missing references)
-		//IL_0085: Expected O, but got Unknown
-		//IL_0096: Unknown result type (might be due to invalid IL or missing references)
-		//IL_00a0: Expected O, but got Unknown
-		//IL_00ac: Unknown result type (might be due to invalid IL or missing references)
-		//IL_00b6: Expected O, but got Unknown
-		//IL_00c3: Unknown result type (might be due to invalid IL or missing references)
-		//IL_00cd: Expected O, but got Unknown
-		int currentLifeCost = CurrentLifeCost;
-		int num = (currentLifeCost + 1) / 2;
-		description.Add(new DynamicVar("LifeLoss", (decimal)currentLifeCost));
-		description.Add(new DynamicVar("HpLoss", (decimal)currentLifeCost));
-		description.Add(new DynamicVar("Gain", (decimal)num));
-		description.Add(new DynamicVar("LifePercent", (decimal)_lifePercent));
-		description.Add(new DynamicVar("Bonus", (decimal)_bonus));
-		description.Add(new DynamicVar("Dealt", (decimal)_bonus));
-		description.Add(new DynamicVar("MaxHpPerKill", 2m));
-		description.Add(new DynamicVar("LifestealPercent", 25m));
-		description.Add("KeywordTags", "[gold]" + OrcaKeyword.Rampage.Title + "[/gold]。\n[gold]永恒[/gold]。");
-	}
+    /// <summary>
+    ///     本次实际要付出的生命：取"最大生命的百分比"与"当前生命 - 1"的较小者（不低于 0）。
+    ///     卡面 <c>{HpLoss}</c> 与本值同源。
+    /// </summary>
+    internal int CurrentLifeCost
+    {
+        get
+        {
+            try
+            {
+                var creature = Owner?.Creature;
+                if (creature == null || creature.MaxHp <= 0) return 0;
 
-	protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
-	{
-		if (IsFrenzyPlay(play))
-		{
-			await OnFrenzyPlay(ctx, play);
-			return;
-		}
-		if (play.IsAutoPlay)
-		{
-			OrcaLog.Info("[Orca] 嗜血龙剑：本次由**龙族魔典**打出 → 走正常使用的强化（不是狂躁的全体伤害）");
-		}
-		Creature creature = ((CardModel)this).Owner.Creature;
-		int lifeLoss = (int)Math.Floor((double)(creature.MaxHp * _lifePercent) / 100.0);
-		int num = creature.CurrentHp - 1;
-		if (lifeLoss > num)
-		{
-			OrcaLog.Info($"[Orca] 嗜血龙剑：代价 {lifeLoss} 超过当前生命可支付上限 {num} ⇒ 钳到 {Math.Max(num, 0)}");
-			lifeLoss = Math.Max(num, 0);
-		}
-		if (lifeLoss > 0)
-		{
-			await CreatureCmd.SetCurrentHp(creature, (decimal)(creature.CurrentHp - lifeLoss));
-			int num2 = (int)Math.Ceiling((double)lifeLoss * 0.5);
-			_bonus += num2;
-			OrcaLog.Info($"[Orca] 嗜血龙剑·主动打出：失去生命 {lifeLoss}（{_lifePercent}% × 最大上限 {creature.MaxHp}）→ 伤害附加 +{num2}（累计 {_bonus}），本次不造成伤害");
-			OrcaCardUi.Refresh((CardModel?)(object)this);
-		}
-		else
-		{
-			OrcaLog.Info("[Orca] 嗜血龙剑·主动打出：当前生命不足以支付代价（失去 0），伤害附加不变");
-		}
-	}
+                var cost = LifeCostOf(creature.MaxHp);
+                var payable = creature.CurrentHp - 1;
+                return cost > payable ? Math.Max(payable, 0) : cost;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+    }
 
-	protected override async Task OnFrenzyPlay(PlayerChoiceContext ctx, CardPlay play)
-	{
-		int bonus = _bonus;
-		ICombatState combatState = ((CardModel)this).Owner.Creature.CombatState;
-		if (combatState == null)
-		{
-			OrcaLog.Warn("[Orca] 狂躁：不在战斗中，本次不结算");
-			return;
-		}
-		OrcaLog.Info($"[Orca] 嗜血龙剑·狂躁（回合结束自动打出）：对**全体敌人**造成 {bonus} 点伤害（伤害附加 {_bonus}）");
-		if (bonus <= 0)
-		{
-			OrcaLog.Info("[Orca] 狂躁：伤害附加为 0 ⇒ 正常进弃牌堆（不回抽牌堆）");
-			return;
-		}
-		try
-		{
-			AttackCommand attack = DamageCmd.Attack((decimal)bonus).FromCard((CardModel)(object)this, play).TargetingAllOpponents(combatState)
-				.WithHitFx("vfx/vfx_attack_slash", (string)null, (string)null);
-			int value = combatState.Enemies.Count((Creature e) => !e.IsDead);
-			OrcaLog.Info($"[Orca] 狂躁结算：攻击者={((CardModel)this).Owner.Creature.Name}、存活敌人 {value} 个、伤害 {bonus}");
-			await attack.Execute(ctx);
-			List<DamageResult> list = attack.Results.SelectMany((List<DamageResult> r) => r).ToList();
-			string value2 = string.Join("、", list.Select(delegate(DamageResult r)
-			{
-				DefaultInterpolatedStringHandler defaultInterpolatedStringHandler2 = new DefaultInterpolatedStringHandler(1, 2);
-				Creature receiver2 = r.Receiver;
-				defaultInterpolatedStringHandler2.AppendFormatted((receiver2 != null) ? receiver2.Name : null);
-				defaultInterpolatedStringHandler2.AppendLiteral(":");
-				defaultInterpolatedStringHandler2.AppendFormatted(r.TotalDamage);
-				return defaultInterpolatedStringHandler2.ToStringAndClear();
-			}));
-			OrcaLog.Info($"[Orca] 狂躁结算完成：命中 {list.Count} 次，合计 {list.Sum((DamageResult r) => r.TotalDamage)} 点伤害（{value2}）");
-			OrcaLog.Info($"[Orca] 狂调结算明细：Results 组数={attack.Results.Count()}、展平后 {list.Count} 条 → " + string.Join(" | ", list.Select(delegate(DamageResult r)
-			{
-				DefaultInterpolatedStringHandler defaultInterpolatedStringHandler = new DefaultInterpolatedStringHandler(6, 3);
-				Creature receiver = r.Receiver;
-				defaultInterpolatedStringHandler.AppendFormatted((receiver != null) ? receiver.Name : null);
-				defaultInterpolatedStringHandler.AppendLiteral("(伤");
-				defaultInterpolatedStringHandler.AppendFormatted(r.TotalDamage);
-				defaultInterpolatedStringHandler.AppendLiteral(",杀=");
-				defaultInterpolatedStringHandler.AppendFormatted(r.WasTargetKilled ? 1 : 0);
-				defaultInterpolatedStringHandler.AppendLiteral(")");
-				return defaultInterpolatedStringHandler.ToStringAndClear();
-			})));
-			int killed = list.Count((DamageResult r) => r.WasTargetKilled);
-			if (killed > 0)
-			{
-				int gain = killed * 2;
-				await CreatureCmd.GainMaxHp(((CardModel)this).Owner.Creature, (decimal)gain);
-				OrcaLog.Info($"[Orca] 嗜血龙剑击杀 {killed} 个敌人 → 生命上限 +{gain}（每个 +{2}）");
-			}
-		}
-		catch (Exception value3)
-		{
-			Log.Error($"[Orca] 狂躁结算抛异常（本次没造成伤害）：{value3}", 2);
-		}
-	}
+    /// <summary>最大生命的 <see cref="_lifePercent" />%（向下取整）。</summary>
+    private int LifeCostOf(int maxHp) => (int)Math.Floor(maxHp * _lifePercent / 100.0);
 
-	protected override void OnUpgrade()
-	{
-		_lifePercent = 30;
-		CardCmd.ApplyKeyword((CardModel)(object)this, (CardKeyword[])(object)new CardKeyword[1] { (CardKeyword)3 });
-	}
+    /// <summary>代价 → 伤害附加（向上取整的一半）。卡面 <c>{Gain}</c> 与结算共用此口径。</summary>
+    private static int BonusOf(int lifeCost) => (int)Math.Ceiling(lifeCost * (double)BonusConversion);
+
+    /// <summary>描述里的数值全部由 <see cref="AddExtraArgsToDescription" /> 注入（本牌无 CanonicalVars）。</summary>
+    protected override IEnumerable<DynamicVar> CanonicalVars => Array.Empty<DynamicVar>();
+
+    /// <summary>永恒：不能被移除/变形。</summary>
+    public override IEnumerable<CardKeyword> CanonicalKeywords => new[] { CardKeyword.Eternal };
+
+    /// <summary>累积伤害附加（血焰剑鞘 / 其它牌给它加值）。</summary>
+    internal void AddBonus(int amount)
+    {
+        if (amount <= 0) return;
+
+        _bonus += amount;
+        OrcaCardUi.Refresh(this);
+    }
+
+    public OrcaBloodSword()
+        : base(2, CardType.Skill, CardRarity.Rare, TargetType.Self)
+    {
+    }
+
+    protected override void AddExtraArgsToDescription(LocString description)
+    {
+        var lifeCost = CurrentLifeCost;
+
+        description.Add(new DynamicVar("LifeLoss", (decimal)lifeCost));
+        description.Add(new DynamicVar("HpLoss", (decimal)lifeCost));
+        description.Add(new DynamicVar("Gain", (decimal)BonusOf(lifeCost)));
+        description.Add(new DynamicVar("LifePercent", (decimal)_lifePercent));
+        description.Add(new DynamicVar("Bonus", (decimal)_bonus));
+        description.Add(new DynamicVar("Dealt", (decimal)_bonus));
+        description.Add(new DynamicVar("MaxHpPerKill", (decimal)MaxHpPerKillValue));
+        description.Add(new DynamicVar("LifestealPercent", (decimal)LifestealPercentDisplay));
+        description.Add("KeywordTags", $"[gold]{OrcaKeyword.Rampage.Title}[/gold]。\n[gold]永恒[/gold]。");
+    }
+
+    protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
+    {
+        if (IsFrenzyPlay(play))
+        {
+            await OnFrenzyPlay(ctx, play);
+            return;
+        }
+
+        if (play.IsAutoPlay)
+        {
+            OrcaLog.Info("[Orca] 嗜血龙剑：本次由**龙族魔典**打出 → 走正常使用的强化（不是狂躁的全体伤害）");
+        }
+
+        var creature = Owner.Creature;
+        var lifeLoss = LifeCostOf(creature.MaxHp);
+        var payable = creature.CurrentHp - 1;
+
+        if (lifeLoss > payable)
+        {
+            OrcaLog.Info($"[Orca] 嗜血龙剑：代价 {lifeLoss} 超过当前生命可支付上限 {payable} ⇒ 钳到 {Math.Max(payable, 0)}");
+            lifeLoss = Math.Max(payable, 0);
+        }
+
+        if (lifeLoss <= 0)
+        {
+            OrcaLog.Info("[Orca] 嗜血龙剑·主动打出：当前生命不足以支付代价（失去 0），伤害附加不变");
+            return;
+        }
+
+        await CreatureCmd.SetCurrentHp(creature, creature.CurrentHp - lifeLoss);
+
+        var gain = BonusOf(lifeLoss);
+        _bonus += gain;
+        OrcaLog.Info($"[Orca] 嗜血龙剑·主动打出：失去生命 {lifeLoss}（{_lifePercent}% × 最大上限 {creature.MaxHp}）→ 伤害附加 +{gain}（累计 {_bonus}），本次不造成伤害");
+        OrcaCardUi.Refresh(this);
+    }
+
+    /// <summary>被狂躁打出：对全体敌人造成等同于当前伤害附加的伤害；击杀则加生命上限。</summary>
+    protected override async Task OnFrenzyPlay(PlayerChoiceContext ctx, CardPlay play)
+    {
+        var bonus = _bonus;
+        var combat = Owner.Creature.CombatState;
+        if (combat == null)
+        {
+            OrcaLog.Warn("[Orca] 狂躁：不在战斗中，本次不结算");
+            return;
+        }
+
+        OrcaLog.Info($"[Orca] 嗜血龙剑·狂躁（回合结束自动打出）：对**全体敌人**造成 {bonus} 点伤害（伤害附加 {_bonus}）");
+        if (bonus <= 0)
+        {
+            OrcaLog.Info("[Orca] 狂躁：伤害附加为 0 ⇒ 正常进弃牌堆（不回抽牌堆）");
+            return;
+        }
+
+        try
+        {
+            var attack = DamageCmd.Attack(bonus).FromCard(this, play).TargetingAllOpponents(combat)
+                .WithHitFx("vfx/vfx_attack_slash", null, null);
+
+            var aliveCount = combat.Enemies.Count(e => !e.IsDead);
+            OrcaLog.Info($"[Orca] 狂躁结算：攻击者={Owner.Creature.Name}、存活敌人 {aliveCount} 个、伤害 {bonus}");
+
+            await attack.Execute(ctx);
+
+            var hits = attack.Results.SelectMany(r => r).ToList();
+            OrcaLog.Info($"[Orca] 狂躁结算完成：命中 {hits.Count} 次，合计 {hits.Sum(r => r.TotalDamage)} 点伤害"
+                      + $"（{string.Join("、", hits.Select(r => $"{r.Receiver?.Name}:{r.TotalDamage}"))}）");
+            OrcaLog.Info($"[Orca] 狂调结算明细：Results 组数={attack.Results.Count()}、展平后 {hits.Count} 条 → "
+                      + string.Join(" | ", hits.Select(r => $"{r.Receiver?.Name}(伤{r.TotalDamage},杀={(r.WasTargetKilled ? 1 : 0)})")));
+
+            var killed = hits.Count(r => r.WasTargetKilled);
+            if (killed > 0)
+            {
+                var gain = killed * MaxHpPerKillValue;
+                await CreatureCmd.GainMaxHp(Owner.Creature, gain);
+                OrcaLog.Info($"[Orca] 嗜血龙剑击杀 {killed} 个敌人 → 生命上限 +{gain}（每个 +{MaxHpPerKillValue}）");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[Orca] 狂躁结算抛异常（本次没造成伤害）：{ex}", 2);
+        }
+    }
+
+    /// <summary>敲后：代价 20% → 30%，并去掉消耗、获得**固有**（用户口径"敲后固有"）。</summary>
+    protected override void OnUpgrade()
+    {
+        _lifePercent = UpgradedLifePercent;
+        CardCmd.ApplyKeyword(this, new[] { CardKeyword.Innate });
+    }
 }
