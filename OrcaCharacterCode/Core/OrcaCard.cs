@@ -1,118 +1,139 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Cards;
-using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Models;
 
 namespace OrcaCharacter;
 
+/// <summary>
+///     银龙奥卡**所有卡牌的基类**（打台词、卡面路径、魔典标记、回抽牌堆）。
+///
+///     <para><b>本文件是「重建源码树」的第 1 个文件</b>（用户口径 2026-10-04：
+///     「重建源码树：将反编译里面的代码，按照我们的工程去自己建立」）。
+///     改写前它是反编译器的直接输出，含 <c>(CardModel)(object)this</c> 强转、
+///     <c>//IL_0002: Unknown result type</c> 残留、以及被反编译成魔法数的枚举
+///     （<c>(PileType)1</c> / <c>(CardPilePosition)2</c>）。</para>
+///
+///     <para>★ <b>一处重要的判断更正</b>：反编译输出里那个 <c>&lt;&gt;n__0</c> 转发方法
+///     **不是反编译残留** —— 反编译【官方基准 dll】可见官方同样有它：
+///     <code>
+///     [CompilerGenerated] [DebuggerHidden]
+///     private Task &lt;&gt;n__0(PlayerChoiceContext ctx, CardPlay play)
+///         =&gt; ((AbstractModel)this).AfterCardPlayed(ctx, play);
+///     </code>
+///     它是 Roslyn 对「async 方法里调用 <c>base.</c>」生成的**必需**转发器
+///     （async 状态机内不能直接写 base 调用）。所以本文件手写为
+///     <c>await base.AfterCardPlayed(...)</c>，编译后**同样**会生成那个转发器 —— 语义完全一致。
+///     ⇒ 也因此，<c>OrcaCard</c> 被排除为「打出卡牌即卡死」的嫌疑对象：官方是同一形状。</para>
+/// </summary>
 public abstract class OrcaCard : CardModel
 {
-	private bool _viaCodex;
+    /// <summary>模型 id 前缀（<c>ORCA_STRIKE</c> ⇒ 卡面资源名 <c>strike</c>）。</summary>
+    private const string IdPrefix = "ORCA_";
 
-	public override CardPoolModel Pool => (CardPoolModel)(object)ModelDb.CardPool<OrcaCardPool>();
+    /// <summary>卡面资源目录（PortraitPath / BetaPortraitPath / PortraitPngPath 共用，单一来源）。</summary>
+    private const string PortraitDir = "res://images/packed/card_portraits/orca/";
 
-	public virtual OrcaOrbForm OrbForm => OrcaOrbForm.None;
+    /// <summary>格挡变量的键名（判定"这张牌是否给格挡" ⇒ 决定台词说哪一句）。</summary>
+    private const string BlockVarKey = "Block";
 
-	private string AssetEntry
-	{
-		get
-		{
-			string entry = ((AbstractModel)this).Id.Entry;
-			if (!entry.StartsWith("ORCA_", StringComparison.Ordinal))
-			{
-				return entry.ToLowerInvariant();
-			}
-			string text = entry;
-			int length = "ORCA_".Length;
-			return text.Substring(length, text.Length - length).ToLowerInvariant();
-		}
-	}
+    /// <summary>「本次是被【龙族魔典】免费打出」的一次性标记。</summary>
+    private bool _viaCodex;
 
-	public override string PortraitPath => "res://images/packed/card_portraits/orca/" + AssetEntry + ".png";
+    public override CardPoolModel Pool => ModelDb.CardPool<OrcaCardPool>();
 
-	public override string BetaPortraitPath => ((CardModel)this).PortraitPath;
+    /// <summary>这张牌属于哪个能量球形态（None = 不改变形态）。</summary>
+    public virtual OrcaOrbForm OrbForm => OrcaOrbForm.None;
 
-	protected override string PortraitPngPath => ((CardModel)this).PortraitPath;
+    /// <summary>id 去掉 <see cref="IdPrefix" /> 后小写 ⇒ 卡面资源名。</summary>
+    private string AssetEntry
+    {
+        get
+        {
+            var entry = Id.Entry;
+            return entry.StartsWith(IdPrefix, StringComparison.Ordinal)
+                ? entry.Substring(IdPrefix.Length).ToLowerInvariant()
+                : entry.ToLowerInvariant();
+        }
+    }
 
-	public override IEnumerable<string> AllPortraitPaths => new string[1] { ((CardModel)this).PortraitPath };
+    public override string PortraitPath => PortraitDir + AssetEntry + ".png";
 
-	internal void MarkViaCodex()
-	{
-		_viaCodex = true;
-	}
+    public override string BetaPortraitPath => PortraitPath;
 
-	internal void ClearViaCodex()
-	{
-		_viaCodex = false;
-	}
+    protected override string PortraitPngPath => PortraitPath;
 
-	internal bool ConsumeViaCodex()
-	{
-		bool viaCodex = _viaCodex;
-		_viaCodex = false;
-		return viaCodex;
-	}
+    public override IEnumerable<string> AllPortraitPaths => new[] { PortraitPath };
 
-	public override async Task AfterCardPlayed(PlayerChoiceContext choiceContext, CardPlay cardPlay)
-	{
-		if (cardPlay.Card == this)
-		{
-			Player owner = ((CardModel)this).Owner;
-			Creature val = ((owner != null) ? owner.Creature : null);
-			if (val != null)
-			{
-				bool grantsBlock = false;
-				try
-				{
-					grantsBlock = ((CardModel)this).DynamicVars.ContainsKey("Block");
-				}
-				catch
-				{
-				}
-				OrcaSpeech.SayCardType(val, (int)((CardModel)this).Type, grantsBlock);
-			}
-			Player owner2 = ((CardModel)this).Owner;
-			OrcaSpeech.SayCardLine((owner2 != null) ? owner2.Creature : null, ((AbstractModel)this).Id.Entry);
-		}
-		await _003C_003En__0(choiceContext, cardPlay);
-	}
+    // ── 「龙族魔典免费打出」标记（打出时由 OrcaDragonCodex 打标、OnPlay 里消费）──
 
-	internal async Task ReturnToDrawPileTop(string why)
-	{
-		try
-		{
-			Player owner = ((CardModel)this).Owner;
-			if (owner != null)
-			{
-				await CardPileCmd.Add((CardModel)(object)this, PileTypeExtensions.GetPile((PileType)1, owner), (CardPilePosition)2, (AbstractModel)null, false);
-				OrcaLog.Info($"[Orca] {why}：{((AbstractModel)this).Id.Entry} 回到抽牌堆**第一位**");
-			}
-		}
-		catch (Exception ex)
-		{
-			OrcaLog.Warn($"[Orca] {why}：回抽牌堆失败（{((AbstractModel)this).Id.Entry}）：{ex.Message}");
-		}
-	}
+    internal void MarkViaCodex() => _viaCodex = true;
 
-	protected OrcaCard(int cost, CardType type, CardRarity rarity, TargetType target, bool showInLibrary = true)
-		: base(cost, type, rarity, target, showInLibrary)
-	{
-	}//IL_0002: Unknown result type (might be due to invalid IL or missing references)
-	//IL_0003: Unknown result type (might be due to invalid IL or missing references)
-	//IL_0004: Unknown result type (might be due to invalid IL or missing references)
+    internal void ClearViaCodex() => _viaCodex = false;
 
+    internal bool ConsumeViaCodex()
+    {
+        var viaCodex = _viaCodex;
+        _viaCodex = false;
+        return viaCodex;
+    }
 
-	[CompilerGenerated]
-	[DebuggerHidden]
-	private Task _003C_003En__0(PlayerChoiceContext choiceContext, CardPlay cardPlay)
-	{
-		return ((AbstractModel)this).AfterCardPlayed(choiceContext, cardPlay);
-	}
+    /// <summary>
+    ///     每张牌打出后的统一收尾：先说台词，再转交基类实现。
+    ///
+    ///     <para>台词分两句：按**牌型**说一句（给格挡的技能牌走另一句），再按**牌 id** 说专属台词。
+    ///     <c>DynamicVars</c> 在少数时机不可用，此时按"不给格挡"处理（与原实现一致：吞掉该异常）。</para>
+    /// </summary>
+    public override async Task AfterCardPlayed(PlayerChoiceContext choiceContext, CardPlay cardPlay)
+    {
+        if (cardPlay.Card == this)
+        {
+            var creature = Owner?.Creature;
+            if (creature != null)
+            {
+                var grantsBlock = false;
+                try
+                {
+                    grantsBlock = DynamicVars.ContainsKey(BlockVarKey);
+                }
+                catch
+                {
+                    // 原实现即如此：DynamicVars 取不到时按"不给格挡"说台词，不影响出牌。
+                }
+
+                OrcaSpeech.SayCardType(creature, (int)Type, grantsBlock);
+            }
+
+            OrcaSpeech.SayCardLine(Owner?.Creature, Id.Entry);
+        }
+
+        // ★ 手写 base 调用（Roslyn 会为它生成编译器转发器，与官方 dll 形状一致）
+        await base.AfterCardPlayed(choiceContext, cardPlay);
+    }
+
+    /// <summary>把这张牌放回**抽牌堆第一位**（狂躁"本回合没打出则回顶"、逆鳞等用到）。</summary>
+    internal async Task ReturnToDrawPileTop(string why)
+    {
+        try
+        {
+            var owner = Owner;
+            if (owner == null) return;
+
+            await CardPileCmd.Add(this, PileType.Draw.GetPile(owner), CardPilePosition.Top, null, false);
+            OrcaLog.Info($"[Orca] {why}：{Id.Entry} 回到抽牌堆**第一位**");
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] {why}：回抽牌堆失败（{Id.Entry}）：{ex.Message}");
+        }
+    }
+
+    protected OrcaCard(int cost, CardType type, CardRarity rarity, TargetType target, bool showInLibrary = true)
+        : base(cost, type, rarity, target, showInLibrary)
+    {
+    }
 }
