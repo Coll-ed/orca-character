@@ -60,6 +60,20 @@ public sealed class OrcaBloodBlade : OrcaCard
     /// </summary>
     private const int LifePercent = 30;
 
+    /// <summary>
+    ///     单敌时的**吸血倍率**（%）。文案里写 <c>{LifestealPercent:diff()}</c>。
+    ///
+    ///     <para>★★ 这里有个**文字游戏**，用户 2026-10-04 亲口说明：
+    ///     <i>"这个其实玩文字游戏，卡面介绍这么说，因为你想想实际就是对单有一个额外100%吸血倍率，
+    ///     换算数值其实就是我们代码里的生命恢复"</i>。</para>
+    ///
+    ///     <para>⇒ 推导：吸血 = 伤害 × 倍率；倍率 100% ⇒ 回血 = 伤害本身，
+    ///     与"恢复（该敌人受到的生命伤害）点生命"**完全等价** ✓
+    ///     ⇒ 所以实现走 <see cref="HealFromSingleTarget" />（本牌自己回血），
+    ///     **不去动共享的 <see cref="OrcaLifestealPower" />** —— 用户还要单独做吸血流派，别在这里缠死。</para>
+    /// </summary>
+    private const int SingleTargetLifestealPercent = 100;
+
     /// <summary>★ 形态标签：魔剑体系（打出时能量球切成魔剑形态）。</summary>
     public override OrcaOrbForm OrbForm => OrcaOrbForm.Sword;
 
@@ -107,6 +121,9 @@ public sealed class OrcaBloodBlade : OrcaCard
         description.Add(new DynamicVar("HpLoss", (decimal)lifeLoss));   // 失去的生命（具体数值）
         description.Add(new DynamicVar("Bonus", (decimal)_bonus));      // 当前累计附加 ⇒ 狂躁伤害
         description.Add(new DynamicVar("Dealt", (decimal)_bonus));      // 同上的别名（文案用词）
+        // ★ 文案里的 {LifestealPercent:diff()}。它的**数值效果**就是下面 HealFromSingleTarget 的回血量
+        //   （吸血倍率 100% ⇔ 回血 = 伤害本身），见 SingleTargetLifestealPercent 的注释。
+        description.Add(new DynamicVar("LifestealPercent", (decimal)SingleTargetLifestealPercent));
         description.Add("KeywordTags", $"[gold]{OrcaSwordState.Title}[/gold]。\n[gold]永恒[/gold]。");
     }
 
