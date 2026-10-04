@@ -21,6 +21,16 @@ public static class OrcaBootstrap
 {
     public const string HarmonyId = "colled.sts2.orca_character";
 
+    /// <summary>
+    ///     ★ **构建标记**（二分实验专用，见 `docs/卡死二分方案.md`）。
+    ///
+    ///     <para>每次二分实验**改这一个字符串**，启动时会打进日志 ⇒ 用来确认
+    ///     "用户实际跑的确实是这一版"。为什么需要：交接文档 `05-文档\⑤` 的教训表第 6 条记着
+    ///     「我曾同时存在 `src` / `src-s2` / `src-fresh`，并**从错误的树编译了一整轮**」——
+    ///     卡死这种问题本来就无法从日志判断，再叠上"跑错版本"就彻底无法归因。</para>
+    /// </summary>
+    public const string BuildTag = "12of12-handwritten";
+
     private static bool _initialized;
 
     public static void Init()
@@ -41,6 +51,9 @@ public static class OrcaBootstrap
         {
             OrcaLog.Warn($"[Orca] 模组配置注册失败（日志开关不可用，日志按默认全开）：{ex.Message}", 2);
         }
+
+        // ★ 构建标记：二分实验时靠它确认"用户实际跑的是哪一版"（见 BuildTag 的注释）
+        OrcaLog.Info($"[Orca] 构建标记 = {BuildTag}", 2);
 
         // 皮肤：切换入口＝奥卡皮肤包自带的皮肤管理器（读它落盘的 orca.txt），这里只做初始化 + 登记卡框材质
         var modDir = string.Empty;
