@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using MegaCrit.Sts2.Core.Logging;
 
@@ -199,17 +200,17 @@ internal static class OrcaSkin
     /// <summary>
     ///     重新读一次当前皮肤 —— 进战斗 / 进选人前各调一次，
     ///     这样在皮肤管理器面板里切完，下一次进战斗就是新皮肤。
+    ///
+    ///     <para>★ 2026-10-04 顺序调整（用户口径：「把它移植整合到这个模组里面来，**优先读自带的配置**」）：
+    ///     原来先读外部皮肤管理器、后读我们自己的 <c>orca_skin.json</c>。
+    ///     现改为**自有配置优先**，外部管理器降级为兼容回退
+    ///     —— 这样本模组不依赖任何第三方也能有皮肤选择，且我们自己的选择不会被它覆盖。</para>
     /// </summary>
     public static void Refresh()
     {
         _lastRefreshMs = Environment.TickCount64;
-        var byManager = ReadManagerSelection();
-        if (byManager != null)
-        {
-            Set(byManager, "皮肤管理器");
-            return;
-        }
 
+        // ① 自有配置优先（面板写的就是它）
         var byFile = ReadFallbackFile();
         if (byFile != null)
         {
@@ -217,7 +218,53 @@ internal static class OrcaSkin
             return;
         }
 
+        // ② 兼容回退：没写过自有配置时，沿用外部皮肤管理器的选择
+        var byManager = ReadManagerSelection();
+        if (byManager != null)
+        {
+            Set(byManager, "皮肤管理器");
+            return;
+        }
+
         Set(Plate, "默认（板甲）");
+    }
+
+    /// <summary>
+    ///     ★ 把皮肤选择写进**我们自己的**配置文件（供模组内置的皮肤面板调用）。
+    ///
+    ///     <para>写入路径 = 模组目录下的 <c>orca_skin.json</c>（与 <see cref="ReadFallbackFile" /> 同一份，
+    ///     单一来源）；UTF-8 **无 BOM**（有 BOM 会让 Godot/JsonDocument 解析失败 —— 本工程踩过这个坑）。</para>
+    ///
+    ///     <para>只接受 <see cref="Plate" /> / <see cref="Wedding" />，其余一律拒绝并记日志（不静默吞掉）。</para>
+    /// </summary>
+    /// <returns>写入成功返回 true。</returns>
+    public static bool SaveActive(string skin)
+    {
+        if (skin is not (Plate or Wedding))
+        {
+            OrcaLog.Warn($"[Orca] 皮肤写入被拒：未知皮肤「{skin}」（只接受 {Plate} / {Wedding}）", 2);
+            return false;
+        }
+
+        try
+        {
+            if (string.IsNullOrEmpty(_modDir))
+            {
+                OrcaLog.Warn("[Orca] 皮肤写入失败：模组目录未知（Init 尚未调用）", 2);
+                return false;
+            }
+
+            var path = Path.Combine(_modDir, FallbackFileName);
+            File.WriteAllText(path, $"{{\"active\": \"{skin}\"}}", new UTF8Encoding(false));
+            Set(skin, FallbackFileName);
+            OrcaLog.Info($"[Orca] 皮肤选择已写入 {FallbackFileName} → {skin}", 2);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 皮肤写入失败（{FallbackFileName}）：{ex.Message}", 2);
+            return false;
+        }
     }
 
     /// <summary>
