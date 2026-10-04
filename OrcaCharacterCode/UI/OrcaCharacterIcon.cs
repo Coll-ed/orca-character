@@ -31,9 +31,9 @@ internal static class OrcaCharacterIcon
     ///     <c>_icon.Texture = character.CharacterSelectIcon;</c>），**不是** <c>IconTexture</c>。
     ///     这也正对用户说的"是单独立绘" —— 它就是那张独立立绘（板甲用 826KB 那张，婚纱用用户给的新图）。
     /// </summary>
-    private const string WeddingSelectIllustPath = "res://images/packed/character_select/char_select_orca_wedding.png";
+    internal const string WeddingSelectIllustPath = "res://images/packed/character_select/char_select_orca_wedding.png";
 
-    private const string PlateSelectIllustPath = "res://images/packed/character_select/char_select_orca.png";
+    internal const string PlateSelectIllustPath = "res://images/packed/character_select/char_select_orca.png";
 
     private static bool _warned;
 
@@ -127,6 +127,9 @@ internal static class OrcaCharacterIcon
         {
             try
             {
+                // ⓪ ★ 注入我们自己的皮肤切换面板（2026-10-05：不再依赖外部皮肤包的管理器）
+                OrcaSkinPanel.EnsureInjected(__instance);
+
                 // ① 打开时先刷一次（等那排按钮建好）
                 var once = __instance.GetTree()?.CreateTimer(0.25f);
                 if (once != null) once.Timeout += () => RefreshLiveIcons();
@@ -147,6 +150,7 @@ internal static class OrcaCharacterIcon
                 {
                     OrcaSkin.Refresh();              // 立刻重读管理器选择（不走 1.5s 节流）
                     RefreshLiveIcons();
+                    OrcaSkinPanel.SyncState();       // ★ 皮肤面板的高亮/预览也跟着（外部面板切了也对得上）
                 };
             }
             catch (Exception ex)

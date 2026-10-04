@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Bindings.MegaSpine;
 using MegaCrit.Sts2.Core.Nodes.RestSite;
+using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
 using MegaCrit.Sts2.Core.Nodes.Screens.Shops;
 
 namespace OrcaCharacter;
@@ -57,6 +59,14 @@ internal static class OrcaSceneSkin
     internal const string MerchantIdleAnimation = "relaxed_loop";
 
     /// <summary>
+    ///     选人界面大人物模型的动画名。**来源＝皮肤定义** <c>skins/orca/&lt;皮肤&gt;/skin.json</c>
+    ///     的 <c>charselect.animation</c>（两套皮肤都是 <c>"animation"</c>）——
+    ///     外部模组 CharacterSkinManager 也是拿这个字段驱动
+    ///     （反编译实据 <c>TryApplyCharacterSelectPreview</c> → <c>TryApplyLoopToNode(..., skin.CharacterSelect.Animation, ...)</c>）。
+    /// </summary>
+    internal const string CharSelectIdleAnimation = "animation";
+
+    /// <summary>
     ///     把 <paramref name="skeletonPath" /> 套到这棵子树里的 SpineSprite 上，
     ///     并在换完之后**用运行时的动画 API 重新驱动动画**。
     /// </summary>
@@ -102,14 +112,71 @@ internal static class OrcaSceneSkin
         return applied;
     }
 
-    /// <summary>在这棵子树里找所有 SpineSprite（含自己）。</summary>
+    /// <summary>
+    ///     ★ 选人界面里那块**大人物模型**的宿主节点名。
+    ///
+    ///     <para>实据（游戏自己的 dll，<c>NCharacterSelectScreen</c>）：
+    ///     <c>_bgContainer = GetNode&lt;Control&gt;("AnimatedBg");</c> —— 即 <c>_bgContainer</c>
+    ///     就是场景里那个叫 <c>AnimatedBg</c> 的节点。这里**直接用公开的节点名**取，
+    ///     不去反射它的私有字段（少一处版本耦合）。</para>
+    /// </summary>
+    private const string SelectScreenModelHost = "AnimatedBg";
+
+    /// <summary>
+    ///     把选人界面那块**大人物模型**换成当前皮肤。
+    ///
+    ///     <para>★ 拼图：模型挂在 <c>AnimatedBg</c> 下，而 <c>SelectCharacter</c> 会**清空它的全部子节点
+    ///     再放一个新模型**（游戏 dll 实据：<c>foreach (child in _bgContainer.GetChildren()) RemoveChildSafely(child);</c>
+    ///     之后 <c>AddChildSafely(control)</c>）⇒ 模型就是它的**最后一个子节点**（也是唯一一个）。
+    ///     外部管理器同样按"最后一个子节点"取（反编译实据 <c>TryApplyCharacterSelectPreview</c>）。</para>
+    ///
+    ///     <para>⚠️ 这条链路原先**根本没人接** —— <see cref="OrcaSkin.CharSelectSkeleton" /> 一直是死代码，
+    ///     所以用户实测「切换为板甲后，立绘变，但是**人物不变**」：小图与立绘由
+    ///     <see cref="OrcaCharacterIcon.RefreshLiveIcons" /> 就地换掉，大模型没人管。</para>
+    /// </summary>
+    internal static void ApplyToCharacterSelect(NCharacterSelectScreen screen)
+    {
+        try
+        {
+            var host = screen.GetNodeOrNull<Control>(SelectScreenModelHost);
+            if (host == null)
+            {
+                OrcaLog.Warn($"[Orca] 选人外观：找不到模型宿主节点 {SelectScreenModelHost}", 2);
+                return;
+            }
+
+            var model = host.GetChildren().LastOrDefault();
+            if (model == null)
+            {
+                OrcaLog.Warn("[Orca] 选人外观：模型宿主下还没有子节点，本次跳过", 2);
+                return;
+            }
+
+            var n = Apply(model, OrcaSkin.CharSelectSkeleton, CharSelectIdleAnimation, "选人外观");
+            if (n > 0)
+                OrcaLog.Info($"[Orca] 选人外观已套皮肤 → {OrcaSkin.Active}（{n} 个 SpineSprite）", 2);
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 选人外观套皮肤失败（不影响选人）：{ex.Message}", 2);
+        }
+    }
+
+    /// <summary>
+    ///     在这棵子树里找所有 SpineSprite（含自己）。
+    ///
+    ///     <para>★ 2026-10-05 改为**递归**：原实现只看自己 + 直接子节点，对商店/篝火那种
+    ///     "角色节点直接挂 SpineSprite"的场景够用；但选人界面的大人物模型层级更深
+    ///     （模型挂在 <c>_bgContainer</c> 下、中间还有包装节点）⇒ 浅查找会**一个都找不到**。
+    ///     方法名与注释本来就写的是"这棵子树"，递归才是它本来的语义。</para>
+    /// </summary>
     private static IEnumerable<Node> FindSpineSprites(Node root)
     {
         if (root.GetClass() == MegaSprite.spineClassName) yield return root;
 
         foreach (var child in root.GetChildren())
         {
-            if (child.GetClass() == MegaSprite.spineClassName) yield return child;
+            foreach (var found in FindSpineSprites(child)) yield return found;
         }
     }
 }

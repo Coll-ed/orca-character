@@ -29,7 +29,7 @@ public static class OrcaBootstrap
     ///     「我曾同时存在 `src` / `src-s2` / `src-fresh`，并**从错误的树编译了一整轮**」——
     ///     卡死这种问题本来就无法从日志判断，再叠上"跑错版本"就彻底无法归因。</para>
     /// </summary>
-    public const string BuildTag = "handwritten+merchant-skin";
+    public const string BuildTag = "handwritten+merchant-skin+skinpanel";
 
     private static bool _initialized;
 
@@ -55,10 +55,11 @@ public static class OrcaBootstrap
         // ★ 构建标记：二分实验时靠它确认"用户实际跑的是哪一版"（见 BuildTag 的注释）
         OrcaLog.Info($"[Orca] 构建标记 = {BuildTag}", 2);
 
-        // 皮肤：切换入口＝奥卡皮肤包自带的皮肤管理器（读它落盘的 orca.txt），这里只做初始化 + 登记卡框材质
+        // 皮肤：切换入口＝**本模组自带的选人界面皮肤面板**（OrcaSkinPanel，2026-10-05 起整合进本模组，
+        // 不再依赖外部皮肤包的管理器）。这里只做初始化（读选择）+ 登记卡框材质等自带素材。
         var modDir = string.Empty;
         try { modDir = Path.GetDirectoryName(typeof(OrcaBootstrap).Assembly.Location) ?? string.Empty; }
-        catch { /* 取不到就用空目录，皮肤系统走默认值 */ }
+        catch { /* 取不到就用空目录，兜底配置读不到、走默认板甲 */ }
         OrcaSkin.Init(modDir);
         RegisterCustomAssets();
 

@@ -6,16 +6,17 @@ namespace OrcaCharacter;
 /// <summary>
 ///     银龙奥卡的皮肤状态（板甲 / 婚纱）。
 ///
-///     ★ 切换入口＝**奥卡皮肤包自带的那个皮肤管理器**（CharacterSkinManager，选人界面里的面板），
-///       我们不自己造 UI、也不设游戏热键；它把选择写在
-///       <c>user://mods/character_skin_manager/orca.txt</c>（纯文本，一行 skin_id）。
-///       本类只**读这个文本文件**（读的是数据，不是调用它的代码），据此决定：
-///         · 打架/选人/商店/篝火用哪套骨架（两套都自带在我们包里）；
-///         · 卡面边框材质（板甲＝偏黑灰 / 婚纱＝白）；
-///         · 能量美术叠色（板甲＝偏黑灰 / 婚纱＝白）。
+///     ★ 切换入口＝**本模组自带的皮肤面板**（<see cref="OrcaSkinPanel" />，选人界面右下角那块，
+///       只在选中奥卡时显示）。用户口径 2026-10-05：「下一步就是重新做皮肤切换管理器了」
+///       —— 原先入口在**外部皮肤包**（<c>奥卡皮肤-Orca\CharacterSkinManager</c>）手里，
+///       本角色离了它就没法切皮肤；现在整合进本模组本体。
 ///
-///     兜底：管理器不在（或没选过）时，读我们模组目录下的 <c>orca_skin.json</c>：
-///       <c>{ "active": "plate" | "wedding" }</c>，默认板甲。这样本角色**不依赖任何第三方**也能跑。
+///     选择的**读写**（用户口径 2026-10-05）：
+///       · 读：本模组配置 &gt; 外部管理器文件（兼容旧选择）&gt; <c>orca_skin.json</c> &gt; 默认板甲；
+///       · 写（「双写」）：写本模组配置的同时**也写外部管理器那份**，两边永远同值、不会各切各的。
+///
+///     本类据此决定：打架/选人/商店/篝火用哪套骨架（两套都自带在我们包里）、
+///     卡面边框材质（板甲＝偏黑灰 / 婚纱＝白）、能量美术叠色（板甲＝偏黑灰 / 婚纱＝白）。
 /// </summary>
 internal static class OrcaSkin
 {
@@ -29,6 +30,27 @@ internal static class OrcaSkin
     private const string ManagerDir = "mods/character_skin_manager";
 
     private const string ManagerFile = "orca.txt";
+
+    // ── 本模组自己的选择（用户口径 2026-10-05：「优先读自带的配置」）────────────
+    //   读的优先级：本模组配置 > 外部管理器文件（兼容/迁移旧选择）> orca_skin.json > 默认板甲
+    //   写的策略（用户口径 2026-10-05「双写」）：写本模组配置的同时**也写外部管理器那份**，
+    //   这样外部面板与本模组永远读到同一个值，不会各切各的、互相打架。
+
+    /// <summary>本模组自己的选择落盘位置（user:// 下）。目录名与模组 id 同源。</summary>
+    private const string StoreDir = "mods/orca_character";
+
+    private const string StoreFile = "skin.txt";
+
+    /// <summary>
+    ///     皮肤在**外部管理器**里的 skin_id（双写它的 <c>orca.txt</c> 时用）。
+    ///
+    ///     <para>★ 单一来源＝<c>skins/orca/&lt;皮肤&gt;/skin.json</c> 的 <c>skin_id</c> 字段
+    ///     （外部管理器就是按它认皮肤的，反编译实据：<c>CharacterSkinSelectionStore.GetSelectedSkinId</c>
+    ///     拿到 id 后与 <c>CharacterSkinDefinition.SkinId</c> 比对）⇒ 改那两份 json 时这里必须同步。</para>
+    /// </summary>
+    private const string ManagerIdPlate = "Orca_PlateMail";
+
+    private const string ManagerIdWedding = "Orca_Weddingdress";
 
     private static string _active = Plate;
     private static string _modDir = string.Empty;
@@ -203,6 +225,16 @@ internal static class OrcaSkin
     public static void Refresh()
     {
         _lastRefreshMs = Environment.TickCount64;
+
+        // ① 本模组自己的配置 —— 用户口径 2026-10-05：「优先读自带的配置」
+        var byOwn = ReadOwnStore();
+        if (byOwn != null)
+        {
+            Set(byOwn, "本模组配置");
+            return;
+        }
+
+        // ② 外部皮肤包的管理器 —— 兼容旧选择（本模组还没写过、或玩家一直用它的面板切）
         var byManager = ReadManagerSelection();
         if (byManager != null)
         {
@@ -210,6 +242,7 @@ internal static class OrcaSkin
             return;
         }
 
+        // ③ 兜底文件 → ④ 默认
         var byFile = ReadFallbackFile();
         if (byFile != null)
         {
@@ -218,6 +251,33 @@ internal static class OrcaSkin
         }
 
         Set(Plate, "默认（板甲）");
+    }
+
+    /// <summary>
+    ///     ★ **切换皮肤**（选人界面那块面板点按钮走这里）。
+    ///
+    ///     <para><b>双写</b>（用户口径 2026-10-05）：写本模组自己的配置**同时**写外部管理器的
+    ///     <c>orca.txt</c> ⇒ 两边永远同一个值，不会各切各的。</para>
+    ///
+    ///     <para>返回值＝皮肤**是否真的变了**（没变就不必重套外观）。</para>
+    /// </summary>
+    internal static bool SetSkin(string skin)
+    {
+        if (skin != Plate && skin != Wedding)
+        {
+            OrcaLog.Warn($"[Orca] 切皮肤：不认识的皮肤「{skin}」，忽略", 2);
+            return false;
+        }
+
+        var changed = _active != skin;
+
+        // ★ 先落盘再改内存态：写失败也要让本次会话切过去（否则界面点了没反应，更难查）
+        WriteOwnStore(skin);
+        WriteManagerFile(skin);
+
+        Set(skin, "本模组配置");
+        OrcaLog.Info($"[Orca] 皮肤已切换 → {skin}（已双写：本模组配置 + 管理器文件）", 2);
+        return changed;
     }
 
     /// <summary>
@@ -248,17 +308,76 @@ internal static class OrcaSkin
         if (changed) OrcaCharacterIcon.RefreshLiveIcons();
     }
 
-    private static string ManagerStorePath()
+    /// <summary>Godot 虚拟路径 <c>user://</c> 下某个文件的真实路径（hardcode-ok：这是引擎的虚拟路径协议名，不是本机路径）；不可用时返回 null。</summary>
+    private static string? UserPath(string dir, string file)
     {
         try
         {
             var userDir = Godot.OS.GetUserDataDir();
-            if (string.IsNullOrWhiteSpace(userDir)) return "(user:// 不可用)";
-            return Path.Combine(userDir, ManagerDir.Replace('/', Path.DirectorySeparatorChar), ManagerFile);
+            if (string.IsNullOrWhiteSpace(userDir)) return null;
+            return Path.Combine(userDir, dir.Replace('/', Path.DirectorySeparatorChar), file);
         }
         catch
         {
-            return "(user:// 不可用)";
+            return null;
+        }
+    }
+
+    private static string ManagerStorePath() => UserPath(ManagerDir, ManagerFile) ?? "(不可用)";
+
+    /// <summary>读本模组自己的选择（一行 skin_id）。读不到就返回 null。</summary>
+    private static string? ReadOwnStore()
+    {
+        try
+        {
+            var path = UserPath(StoreDir, StoreFile);
+            if (path == null || !File.Exists(path)) return null;
+
+            var text = File.ReadAllText(path).Trim();
+            return text is Plate or Wedding ? text : null;
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 读本模组皮肤配置失败：{ex.Message}", 2);
+            return null;
+        }
+    }
+
+    /// <summary>写本模组自己的选择。失败只记日志（不影响本次会话已生效的切换）。</summary>
+    private static void WriteOwnStore(string skin)
+    {
+        try
+        {
+            var path = UserPath(StoreDir, StoreFile);
+            if (path == null) return;
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, skin);
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 写本模组皮肤配置失败：{ex.Message}", 2);
+        }
+    }
+
+    /// <summary>
+    ///     同步写外部管理器那份（<c>orca.txt</c>）。
+    ///     ⚠️ 内容必须是**管理器的 skin_id**（<c>Orca_PlateMail</c> / <c>Orca_Weddingdress</c>），
+    ///     不能写我们自己的 <c>plate</c> / <c>wedding</c> —— 它按自己的定义表比对 id。
+    /// </summary>
+    private static void WriteManagerFile(string skin)
+    {
+        try
+        {
+            var path = UserPath(ManagerDir, ManagerFile);
+            if (path == null) return;
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, skin == Wedding ? ManagerIdWedding : ManagerIdPlate);
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 同步写皮肤管理器文件失败（外部面板可能不跟随）：{ex.Message}", 2);
         }
     }
 
