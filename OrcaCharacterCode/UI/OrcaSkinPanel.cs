@@ -12,8 +12,15 @@ namespace OrcaCharacter;
 ///     ★★★ **本模组自带的皮肤切换面板**（用户口径 2026-10-05：「下一步就是重新做皮肤切换管理器了」）。
 ///
 ///     <para><b>形态（照用户 2026-10-05 的手绘草图）</b>：标题＝**当前皮肤名** → 中间一块**实时小人**
-///     （战斗待机动画，随皮肤变）→ 左右两个箭头（《 》）循环切换两套皮肤。面板可**拖动**，
-///     位置记在本模组配置里（用户口径：「我希望给这个浮窗做个拖动功能」+「记住位置」）。</para>
+///     （战斗待机动画，随皮肤变）→ 左右两个箭头（《 》）循环切换两套皮肤。</para>
+///
+///     <para><b>面板交互</b>（用户口径 2026-10-05）：
+///     <list type="bullet">
+///       <item><b>拖动</b>：按住面板左键拖走，松手时记住位置；</item>
+///       <item><b>滚轮缩放</b>：整个面板连续 0.1 步进缩放（<see cref="ZoomMin" />–<see cref="ZoomMax" />），同样记住；</item>
+///       <item>位置与倍率都存在本模组的 user 配置目录（<c>panel.json</c>，hardcode-ok：user 是引擎虚拟路径协议名）：
+///         <c>{x,y,zoom}</c>；**位置可选** —— 没拖过就不写绝对坐标，保住右下角预设的分辨率自适应。</item>
+///     </list></para>
 ///
 ///     <para><b>为什么要自己做</b>：切换入口原先完全依赖**外部皮肤包**（<c>奥卡皮肤-Orca\CharacterSkinManager</c>，
 ///     第三方通用管理器）。用户的设计理念一直是「整合到奥卡角色模组本体」——
@@ -112,10 +119,10 @@ internal static class OrcaSkinPanel
             screen.AddChild(panel);
             _panel = panel;
 
-            var saved = LoadSavedPosition();
-            if (saved != null) ApplySavedPlacement(panel, saved.Value);
+            LoadState(panel);          // 位置（可选）+ 倍率（可选）
 
-            OrcaLog.Info($"[Orca] 皮肤面板已注入选人界面（选中奥卡时显示；位置={(saved != null ? "已记住" : "默认")}）", 2);
+            OrcaLog.Info($"[Orca] 皮肤面板已注入选人界面（选中奥卡时显示；"
+                       + $"位置={(_positionIsCustom ? "已记住" : "默认")}，倍率 {_zoom:F1}×）", 2);
         }
         catch (Exception ex)
         {
@@ -288,19 +295,31 @@ internal static class OrcaSkinPanel
     {
         try
         {
-            if (@event is InputEventMouseButton button && button.ButtonIndex == MouseButton.Left)
+            if (@event is InputEventMouseButton button)
             {
-                if (button.Pressed)
+                // ── 滚轮：整个面板连续缩放（用户口径 2026-10-05：「加一个自定义放大」+「鼠标滚轮缩放」+「连续 0.1 步进」）
+                if (button.Pressed && button.ButtonIndex == MouseButton.WheelUp)
                 {
-                    // ★ 一旦开始拖，就把锚点切成左上（keepOffsets ⇒ 视觉位置不变），
-                    //   之后 Position 就是"自由坐标"，拖动与落盘都好算。
-                    panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft, keepOffsets: true);
-                    _dragging = true;
+                    Zoom(+ZoomStep);
+                    return;
                 }
-                else if (_dragging)
+                if (button.Pressed && button.ButtonIndex == MouseButton.WheelDown)
                 {
-                    _dragging = false;
-                    SavePosition(panel.Position);
+                    Zoom(-ZoomStep);
+                    return;
+                }
+
+                if (button.ButtonIndex == MouseButton.Left)
+                {
+                    if (button.Pressed)
+                    {
+                        BeginDrag(panel);
+                    }
+                    else if (_dragging)
+                    {
+                        _dragging = false;
+                        SaveState();
+                    }
                 }
             }
             else if (@event is InputEventMouseMotion motion && _dragging)
@@ -311,51 +330,132 @@ internal static class OrcaSkinPanel
         catch (Exception ex)
         {
             _dragging = false;
-            OrcaLog.Warn($"[Orca] 皮肤面板拖动出错：{ex.Message}", 2);
+            OrcaLog.Warn($"[Orca] 皮肤面板拖动/缩放出错：{ex.Message}", 2);
         }
     }
 
-    private static void ApplySavedPlacement(Control panel, Vector2 pos)
+    /// <summary>
+    ///     开始拖动：把锚点换成左上（之后 <c>Position</c> 就是自由坐标）。
+    ///
+    ///     <para>⚠️ <b>2026-10-05 修 user 报的"一拖就消失了"</b>：原先这里写的是
+    ///     <c>SetAnchorsPreset(TopLeft, keepOffsets: true)</c> —— 面板本来是**右下角锚点**，
+    ///     偏移 <c>(-560, -300)</c> 的含义是"距右边缘 560、距下边缘 300"；
+    ///     换锚点时**保留这两个偏移数值**，坐标就成了 <c>(-560, -300)</c>
+    ///     ⇒ 整个面板跑到屏幕左上角**外面**去了（算术即可证）。
+    ///     现在**显式**读回屏幕位置再写回去，不依赖 <c>keepOffsets</c> 的语义。</para>
+    /// </summary>
+    private static void BeginDrag(Control panel)
     {
-        panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft, keepOffsets: true);
-        panel.Position = pos;
+        var keep = panel.GlobalPosition;                 // 先记下屏幕上的真实位置
+        panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        panel.GlobalPosition = keep;                     // 再写回 ⇒ 视觉位置不变，但坐标自由了
+        _positionIsCustom = true;
+        _dragging = true;
     }
 
-    /// <summary>读回记住的位置；没有就返回 null（用默认位置）。</summary>
-    private static Vector2? LoadSavedPosition()
+    /// <summary>把记住的位置套上去（锚点同样换成左上 + 显式设坐标）。</summary>
+    private static void ApplySavedPlacement(Control panel, Vector2 pos)
+    {
+        panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        panel.Position = pos;
+        _positionIsCustom = true;
+    }
+
+    // ── 缩放（整个面板）────────────────────────────────────────────────────
+
+    /// <summary>
+    ///     缩放倍率下限。理由：低于它标题与箭头已经难以辨认，且预览小人基本看不清。
+    /// </summary>
+    private const float ZoomMin = 0.5f;
+
+    /// <summary>
+    ///     缩放倍率上限。理由：本面板默认约 220×210，3× 时约 660×630 —— 再大就会盖住
+    ///     选人界面的角色与按钮，失去"浮窗"的意义。
+    /// </summary>
+    private const float ZoomMax = 3.0f;
+
+    /// <summary>滚轮一格的倍率步进（用户口径 2026-10-05：「连续 0.1 步进」）。</summary>
+    private const float ZoomStep = 0.1f;
+
+    /// <summary>当前倍率（1.0 = 默认大小）。</summary>
+    private static float _zoom = 1.0f;
+
+    /// <summary>位置是否已被用户改过（改过才落盘绝对坐标；没改过就继续用右下角预设，分辨率自适应）。</summary>
+    private static bool _positionIsCustom;
+
+    private static void Zoom(float delta)
+    {
+        var next = Math.Clamp(_zoom + delta, ZoomMin, ZoomMax);
+        if (Math.Abs(next - _zoom) < 0.001f) return;     // 到顶/到底了，不重复落盘
+
+        _zoom = next;
+        ApplyZoom();
+        SaveState();
+        OrcaLog.Info($"[Orca] 皮肤面板缩放 → {_zoom:F1}×（范围 {ZoomMin:F1}–{ZoomMax:F1}）", 2);
+    }
+
+    /// <summary>把倍率应用到整个面板：以**面板中心**为缩放中心（否则会往右下角长）。</summary>
+    private static void ApplyZoom()
+    {
+        if (_panel == null) return;
+        _panel.PivotOffset = _panel.Size / 2f;
+        _panel.Scale = Vector2.One * _zoom;
+    }
+
+    /// <summary>
+    ///     读回记住的面板状态（<c>panel.json</c>：位置与倍率**各自可选**）。
+    ///     缺哪一项就用哪一项的默认（位置＝右下角预设、倍率＝1×）。
+    /// </summary>
+    private static void LoadState(Control panel)
     {
         try
         {
             var path = OrcaSkin.UserStorePath(PanelPosFile);
-            if (path == null || !System.IO.File.Exists(path)) return null;
+            if (path == null || !System.IO.File.Exists(path)) return;
 
             using var doc = JsonDocument.Parse(System.IO.File.ReadAllText(path));
             var root = doc.RootElement;
-            if (!root.TryGetProperty("x", out var x) || !root.TryGetProperty("y", out var y)) return null;
 
-            return new Vector2((float)x.GetDouble(), (float)y.GetDouble());
+            if (root.TryGetProperty("x", out var x) && root.TryGetProperty("y", out var y))
+                ApplySavedPlacement(panel, new Vector2((float)x.GetDouble(), (float)y.GetDouble()));
+
+            if (root.TryGetProperty("zoom", out var zoom))
+            {
+                _zoom = Math.Clamp((float)zoom.GetDouble(), ZoomMin, ZoomMax);
+                ApplyZoom();
+            }
         }
         catch (Exception ex)
         {
-            OrcaLog.Warn($"[Orca] 读皮肤面板位置失败（用默认位置）：{ex.Message}", 2);
-            return null;
+            OrcaLog.Warn($"[Orca] 读皮肤面板状态失败（用默认位置与倍率）：{ex.Message}", 2);
         }
     }
 
-    private static void SavePosition(Vector2 pos)
+    /// <summary>
+    ///     落盘面板状态：**倍率**总是写；**位置**只在用户拖过之后才写绝对坐标
+    ///     （没拖过就继续用右下角预设 ⇒ 保住分辨率自适应）。
+    /// </summary>
+    private static void SaveState()
     {
         try
         {
             var path = OrcaSkin.UserStorePath(PanelPosFile);
-            if (path == null) return;
+            if (path == null || _panel == null) return;
 
             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
-            System.IO.File.WriteAllText(path, JsonSerializer.Serialize(new { x = pos.X, y = pos.Y }));
-            OrcaLog.Info($"[Orca] 皮肤面板位置已记住：({pos.X:F0}, {pos.Y:F0})", 2);
+
+            var payload = _positionIsCustom
+                ? JsonSerializer.Serialize(new { x = _panel.Position.X, y = _panel.Position.Y, zoom = _zoom })
+                : JsonSerializer.Serialize(new { zoom = _zoom });
+
+            System.IO.File.WriteAllText(path, payload);
+            OrcaLog.Info(_positionIsCustom
+                ? $"[Orca] 皮肤面板状态已记住：位置 ({_panel.Position.X:F0}, {_panel.Position.Y:F0})、倍率 {_zoom:F1}×"
+                : $"[Orca] 皮肤面板倍率已记住：{_zoom:F1}×", 2);
         }
         catch (Exception ex)
         {
-            OrcaLog.Warn($"[Orca] 写皮肤面板位置失败：{ex.Message}", 2);
+            OrcaLog.Warn($"[Orca] 写皮肤面板状态失败：{ex.Message}", 2);
         }
     }
 }
