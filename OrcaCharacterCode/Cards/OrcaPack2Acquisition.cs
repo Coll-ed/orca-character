@@ -128,9 +128,28 @@ internal static class OrcaOrobasCardOptionPatch
     /// <summary>本地化文件名（<c>new LocString(文件, 键)</c> 的第一个参数）。</summary>
     private const string LocFile = "cards";
 
+    /// <summary>
+    ///     是否启用"把遗物格换成卡牌选项"。
+    ///
+    ///     <para>⚠️ <b>2026-10-05 置为 false（停用）</b>：启用时会造成**事件软锁** ——
+    ///     用户实测「如图，继续没了，卡在这里了」，事件页一个选项都没有。
+    ///     根因见 <see cref="Postfix" /> 的注释（引擎的 <c>RelicOption</c> 会把**事件页推进回调**
+    ///     一起传进去，而我们只给了裸回调 ⇒ 事件停在原地）。</para>
+    ///
+    ///     <para>⇒ 查清并照抄"事件页推进"那个回调之后，才可以把这里改回 <c>true</c>。
+    ///     在此之前**保持 false**：事件页照原样显示遗物（还自带图标），效果由
+    ///     <see cref="OrcaOrobasDirectObtainPatch" /> 保证为"给【栖途】、不给头环"。</para>
+    ///
+    ///     <para>用 <c>static readonly</c>（而非 <c>const</c>）：常量 <c>false</c> 会让下面的实现变成
+    ///     "编译期不可达代码"并报 CS0162 警告；运行时判定既保留开关、又不产生噪音警告。</para>
+    /// </summary>
+    private static readonly bool EnableCardOptionSwap = false;
+
     private static void Postfix(MegaCrit.Sts2.Core.Models.Events.Orobas __instance,
                                 ref IEnumerable<MegaCrit.Sts2.Core.Events.EventOption> __result)
     {
+        if (!EnableCardOptionSwap) return;      // ★ 停用中（原因见常量的说明）
+
         try
         {
             if (__result == null) return;
