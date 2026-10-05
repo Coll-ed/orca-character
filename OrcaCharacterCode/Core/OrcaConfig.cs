@@ -114,9 +114,37 @@ internal class OrcaConfig : SimpleModConfig
     /// <summary>**回血**时的台词。</summary>
     public static string CustomHeal { get; set; } = "";
 
+    // ══════════════════ ⑤ 特殊死亡台词（★ 2026-10-05 新增）══════════════════
+    //    ★ 与上面那组**不同的两点**（别混）：
+    //      ① 出现在【游戏结束画面】的死亡台词，**不是**战斗里的说话气泡；
+    //      ② 默认值**不是空串**，而是占位文案 —— 这样功能开箱即用（用户口径
+    //         「默认值给占位文案，让功能开箱即用」）。玩家改成自己写的即可。
+
+    /// <summary>
+    ///     ★ <b>与敌同归于尽（焚烧）</b> —— 玩家和敌人被同一次【焚烧】一起烧死时，
+    ///     结束画面显示这句，替换引擎原文。
+    ///
+    ///     <para><b>占位符</b>：<c>{enemies}</c> ⇒ 被替换成**逗号分隔的敌人显示名列表**
+    ///     （例：<c>史莱姆, 酸液史莱姆</c>）。同时烧死多个敌人时会全部列出。</para>
+    ///
+    ///     <para><b>多句随机抽</b>：多条文案用「|」分隔（例：<c>甲。|乙。|丙。</c>），
+    ///     每次死亡随机抽一条 —— 与其他 <c>Custom*</c> 是同一套分隔约定
+    ///     （见 <see cref="Split" />）。</para>
+    ///
+    ///     <para><b>生效条件</b>：需把上面的 <see cref="Preset" /> 设为「自定义预设」
+    ///     （与其它自定义台词一致）。<b>留空</b> = 这种情况不替换，结束画面用引擎原文。</para>
+    /// </summary>
+    public static string CustomBurnDeath { get; set; } = "银龙奥卡与{enemies}一同被火焰烧成了灰烬";
+
     // ══════════════════ 工具 ══════════════════
 
     /// <summary>全部台词分类（顺序与设置界面里输入框的顺序一致）。</summary>
+    /// <remarks>
+    ///     ★ 2026-10-05：**故意不把死亡台词（<see cref="CustomBurnDeath" />）加进来** ——
+    ///     这个数组唯一的消费方是 <c>OrcaSpeech.InjectCustomLines</c>（把气泡台词注入本地化表），
+    ///     死亡台词**不走本地化**、也不该被气泡系统当成候选。它只需要
+    ///     <see cref="RawFor" /> 有分支即可。
+    /// </remarks>
     internal static readonly string[] Categories =
     {
         "combatStart", "frenzy", "hurt", "kill", "swordRefuse",
@@ -139,6 +167,8 @@ internal class OrcaConfig : SimpleModConfig
         "heavyHurt" => CustomHeavyHurt,
         "blocked" => CustomBlocked,
         "heal" => CustomHeal,
+        // ★ 2026-10-05：特殊死亡台词（结束画面）—— 分类名同 OrcaDeathQuotes.KindBurnTogether
+        OrcaDeathQuotes.KindBurnTogether => CustomBurnDeath,
         _ => "",
     };
 
@@ -149,6 +179,26 @@ internal class OrcaConfig : SimpleModConfig
     internal static string[]? Split(string raw)
     {
         if (Preset != BanterPreset.Custom) return null;
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+
+        var parts = raw.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                       .Where(s => s.Length > 0)
+                       .ToArray();
+        return parts.Length > 0 ? parts : null;
+    }
+
+    /// <summary>
+    ///     ★ 拆一条**死亡台词**（给结束画面用）。
+    ///
+    ///     <para>分隔约定与 <see cref="Split" /> 完全一致（<c>|</c>），但**不看**
+    ///     <see cref="Preset" /> 那一档：死亡台词只走这一个设置，没有"内置默认库"可回落 ——
+    ///     留空就是"这种情况不替换文案"（与气泡台词留空＝回落内置库的语义不同，故单列一个方法，
+    ///     而不是把 <see cref="Split" /> 改成带开关的版本）。</para>
+    /// </summary>
+    /// <param name="raw">设置里的原文。</param>
+    /// <returns>候选文案；没有可用候选时返回 <c>null</c>。</returns>
+    internal static string[]? DeathQuoteCandidates(string raw)
+    {
         if (string.IsNullOrWhiteSpace(raw)) return null;
 
         var parts = raw.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

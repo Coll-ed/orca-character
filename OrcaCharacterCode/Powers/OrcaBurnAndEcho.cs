@@ -216,12 +216,28 @@ public sealed class OrcaBurnPower : PowerModel
                 continue;
             }
 
-            await CreatureCmd.Damage(
-                choiceContext,
-                alive,
-                (decimal)stacks,
-                ValueProp.Unblockable | ValueProp.Unpowered,
-                src);
+            // ★★ 2026-10-05：把本批编号发给"特殊死亡台词"的快照（**必须在造成伤害之前**）——
+            //    挂点理由与批次语义见 OrcaDeathQuotes 的类注释。
+            var batchId = OrcaDeathQuotes.NoteBurstSnapshot(combat);
+
+            // ★★ 2026-10-05：把"这次出伤属于焚烧"这件事**夹在 Damage 前后**（try/finally 保证闸门一定落下）——
+            //    死亡台词侧靠它才能证明"玩家是被这次焚烧烧死的"，而不是被敌人打死的 ✓
+            //    ⚠️ 判定必须在**出伤期间**（Kill 的前置）完成：引擎在 Kill 体内就建结束画面并写文案，
+            //       等 Damage 返回之后再判"玩家 IsDead"已经太晚（文案早就写成引擎原文了）✗
+            OrcaDeathQuotes.BeginBurnDamage(batchId);
+            try
+            {
+                await CreatureCmd.Damage(
+                    choiceContext,
+                    alive,
+                    (decimal)stacks,
+                    ValueProp.Unblockable | ValueProp.Unpowered,
+                    src);
+            }
+            finally
+            {
+                OrcaDeathQuotes.EndBurnDamage();
+            }
 
             Log.Info($"[Orca] 焚烧结算（{why}）：{src.Name} 的 {stacks} 层炸开 → 波及 {alive.Count} 个带焚烧的敌人", 2);
         }
