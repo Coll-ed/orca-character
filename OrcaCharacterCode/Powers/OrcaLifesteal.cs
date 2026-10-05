@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Powers;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
@@ -29,6 +30,16 @@ namespace OrcaCharacter;
 ///       · 判定 <c>cardSource is OrcaBloodSword</c>（带【魔剑】标签的那张牌）
 ///       · 判定是攻击、且**未被格挡**的伤害 &gt; 0
 ///       · 回复 <c>ceil(未格挡伤害 × 倍率)</c>（龙剑类型再 × 当前层数），然后按档位决定是否清层
+///     </para>
+///
+///     <para>
+///     ★★ <b>2026-10-06 用户口径（合计）</b>：<i>"回血是总伤害 × 倍率，总生命伤害已经包括了各个敌人结算"</i>
+///     ⇒ <b>同一次出牌内</b>的所有伤害实例（多个敌人 / 多次命中）先把**实际打进生命的伤害**
+///     （<c>DamageResult.UnblockedDamage</c>）**合计**起来，出牌结束后**只结算一次**回血 ——
+///     不再"每个伤害实例各回一次"。
+///     实现：<see cref="AfterDamageGiven" /> 只累计，<see cref="AfterCardPlayed" /> 结算
+///     （引擎实据：<c>Hook.AfterCardPlayed</c>（<c>Hook.cs:422-434</c>）在出牌结束后对监听模型
+///     依次调 <c>AfterCardPlayed</c> / <c>AfterCardPlayedLate</c>；引擎自己的注释也写"通常用前者"）。
 ///     </para>
 /// </summary>
 public sealed class OrcaLifestealPower : PowerModel
@@ -58,7 +69,25 @@ public sealed class OrcaLifestealPower : PowerModel
     /// <summary>可叠层（每层对应"下一次【魔剑】攻击"）。</summary>
     public override PowerStackType StackType => PowerStackType.Counter;
 
-    public override async Task AfterDamageGiven(
+    // ══════════════════ 一次出牌的累计（用户口径 2026-10-06）══════════════════
+    //   用户原话：「回血是总伤害 × 倍率，总生命伤害已经包括了各个敌人结算」
+    //   ⇒ 同一次**出牌**内的所有伤害实例（多个敌人 / 多次命中）先合计，出牌结束后**只结算一次**。
+    //   ⚠️ 这几个是**运行时状态**、不是配置；每次结算后清零（见 AfterCardPlayed）。
+
+    /// <summary>本次出牌累计的**实际打进生命**的伤害（Σ 未被格挡伤害）。</summary>
+    private int _pendingUnblocked;
+
+    /// <summary>本次出牌里是否出现过**龙剑类型**（出现过就走 50% 档 + 一口气清层）。</summary>
+    private bool _pendingIsSword;
+
+    /// <summary>本次出牌累计的伤害实例数（用来判断"这次出牌有没有东西可结算"）。</summary>
+    private int _pendingHits;
+
+    /// <summary>
+    ///     ★ **只累计、不结算**：把本次出牌造成的**实际生命伤害**记到账上，
+    ///     等出牌结束（<see cref="AfterCardPlayed" />）再一次性回血。
+    /// </summary>
+    public override Task AfterDamageGiven(
         PlayerChoiceContext choiceContext,
         Creature? dealer,
         DamageResult result,
@@ -69,51 +98,68 @@ public sealed class OrcaLifestealPower : PowerModel
         try
         {
             // ① 必须是"我们这位玩家"打出的伤害
-            if (dealer == null || dealer != Owner) return;
+            if (dealer == null || dealer != Owner) return Task.CompletedTask;
 
             // ② 必须来自**打出的攻击牌**
             //    ★★ 2026-09-23 用户口径改版：原来只认【嗜血龙剑】，现在**任何攻击牌**都能吸血
             //       （"用魔典打出魔剑后，其他攻击牌打出按 25% 比例回复生命"）。
             //       仍然要求 cardSource 非空 ⇒ "由牌打出的"才算，纯 power/环境伤害不吸。
-            if (cardSource == null) return;
+            if (cardSource == null) return Task.CompletedTask;
 
-            // ③ 必须是攻击、且真的造成了**未被格挡**的伤害
-            if (!props.IsPoweredAttack()) return;
-            if (result.UnblockedDamage <= 0) return;
-            if (Amount <= 0) return;
+            // ③ 必须是攻击、且真的造成了**实际生命伤害**（未被格挡的那部分）
+            if (!props.IsPoweredAttack()) return Task.CompletedTask;
+            if (result.UnblockedDamage <= 0) return Task.CompletedTask;
+            if (Amount <= 0) return Task.CompletedTask;
 
-            // ★★ 2026-09-23 用户口径（最终版）：
-            //    「吸血是**只有被龙剑类型的伤害卡牌**打出才会**消耗**并获得**额外倍率**，
-            //      其他卡牌打出**不消耗**」
-            //    ⇒ 分两档：
-            //      · **龙剑类型**（嗜血龙剑 / 嗜血魔剑 —— 魔剑体系那两张）⇒ 额外倍率 50%（向上取整），**并消耗 1 层**；
-            //      · 其他攻击牌 ⇒ 基础 25%（向下取整、最低 1），**不消耗层数**。
-            //    ⚠️ 旧的"单敌 ⇒ 50%"覆盖机制（PercentOverride）已被取代 ⇒ 已删除。
-            bool isSword = cardSource is OrcaBloodSword or OrcaBloodBlade;
+            // ④ 累计（**不在这里回血** —— 倍率要对"总伤害"整体乘一次，逐实例算不出来）
+            //    ★★ 2026-09-23 用户口径的两档倍率，在下方 AfterCardPlayed 里一次算清。
+            _pendingUnblocked += result.UnblockedDamage;
+            _pendingIsSword |= cardSource is OrcaBloodSword or OrcaBloodBlade;
+            _pendingHits++;
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 吸血累计出错（不影响伤害）：{ex.Message}", 2);
+        }
 
-            // ★★ 2026-10-06 用户裁定：**代码服从文案** —— 游戏内文案写的是
-            //    「[gold]龙剑类型[/gold]（嗜血龙剑 / 嗜血魔剑）→ 伤害的 50%（向上取整）× 当前层数，
-            //      **一口气结清所有层数**」
-            //    而原来是"50% 只算一次 + 减 1 层"（旧口径，与上面的文案不一致 ✗ —— 用户实测
-            //    "叠了 3 层龙剑打出后只消耗了一层"就是这个不一致暴露出来的）。
-            //    现按文案改为：
-            //      · 回复量 = ceil(未被格挡伤害 × 50%) × **当前层数**
-            //      · **一次性清空全部层数**（Remove ⇒ 层数归零、Power 消失）
-            //    ⚠️ 已知代价（如实记录）：同一张牌产生**多次伤害实例**时（例如狂躁的嗜血魔剑打全体），
-            //      只有**第一次**实例能吃到层数 —— 第一次就把层数结清了。这是"一口气结清"口径的
-            //      必然结果，不是缺陷；若日后要改成"每个目标各结清一次"，得改口径而不是改这里。
-            int layers = (int)Amount;                        // 先取层数（下面结算过程中会被清空）
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    ///     ★★ <b>一次出牌结束 ⇒ 结算一次回血</b>（用户口径 2026-10-06：
+    ///     <i>"回血是总伤害 × 倍率，总生命伤害已经包括了各个敌人结算"</i>）。
+    ///
+    ///     <para>两档（用户口径 2026-09-23）：
+    ///     <list type="bullet">
+    ///       <item><b>龙剑类型</b>（嗜血龙剑 / 嗜血魔剑）⇒ <c>ceil(总生命伤害 × 50%) × 当前层数</c>，
+    ///         并**一口气结清全部层数**（2026-10-06 用户裁定"代码服从文案"）；</item>
+    ///       <item><b>其他攻击牌</b> ⇒ <c>max(1, floor(总生命伤害 × 25%))</c>，**不消耗层数**。</item>
+    ///     </list></para>
+    /// </summary>
+    public override async Task AfterCardPlayed(PlayerChoiceContext choiceContext, CardPlay cardPlay)
+    {
+        if (_pendingHits == 0) return;                   // 这次出牌没有可结算的伤害
+
+        int total = _pendingUnblocked;
+        bool isSword = _pendingIsSword;
+        _pendingUnblocked = 0;                           // 先清账：万一下面又触发钩子也不会重复计入
+        _pendingIsSword = false;
+        _pendingHits = 0;
+
+        try
+        {
+            int layers = isSword ? (int)Amount : 0;      // 层数要在清层之前取
 
             int healed;
             string which;
             if (isSword)
             {
-                healed = (int)Math.Ceiling(result.UnblockedDamage * MaxBladePercent / 100.0) * layers;
+                healed = (int)Math.Ceiling(total * MaxBladePercent / 100.0) * layers;
                 which = $"龙剑类型 {MaxBladePercent}%（向上取整）× {layers} 层";
             }
             else
             {
-                healed = Math.Max(MinHeal, (int)Math.Floor(result.UnblockedDamage * Percent / 100.0));
+                healed = Math.Max(MinHeal, (int)Math.Floor(total * Percent / 100.0));
                 which = $"其他攻击牌 {Percent}%（向下取整，最低 {MinHeal}）";
             }
 
@@ -122,11 +168,11 @@ public sealed class OrcaLifestealPower : PowerModel
             var creature = Owner;
             int before = creature.CurrentHp;
             await CreatureCmd.Heal(creature, healed, true);
-            OrcaLog.Info($"[Orca] 吸血触发：{which}，未被格挡伤害 {result.UnblockedDamage} → 回复 {healed} 点生命"
+            OrcaLog.Info($"[Orca] 吸血触发（本次出牌合计）：{which}，总生命伤害 {total} → 回复 {healed} 点生命"
                      + $"（{before} → {creature.CurrentHp}）"
                      + (isSword ? $"，一口气结清 {layers} 层" : "，**不消耗层数**"), 2);
 
-            // ④ ★ 只有**龙剑类型**才消耗层数，且是**一口气结清全部层数**（用户 2026-10-06 裁定）
+            // ★ 只有**龙剑类型**才清层，且是**一口气结清全部层数**（用户 2026-10-06 裁定）
             if (isSword) await PowerCmd.Remove(this);
         }
         catch (Exception ex)
