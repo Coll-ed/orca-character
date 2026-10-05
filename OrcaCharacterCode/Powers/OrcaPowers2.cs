@@ -10,6 +10,7 @@ using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Multiplayer;
 using MegaCrit.Sts2.Core.Entities.Powers;
 using MegaCrit.Sts2.Core.GameActions.Multiplayer;
+using MegaCrit.Sts2.Core.Localization;        // ★ A7：覆写 PowerModel.Description 需要 LocString
 using MegaCrit.Sts2.Core.Localization.DynamicVars;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Entities.Players;
@@ -424,8 +425,84 @@ public sealed class OrcaBloodNirvanaPower : PowerModel
 /// </summary>
 public sealed class OrcaVoidReturnPower : PowerModel
 {
-    /// <summary>转入附加的百分比（用户口径：50% → 敲后 75%）。</summary>
-    internal decimal Ratio = 0.5m;
+    /// <summary>未敲的转入比例（百分点，用户口径 50%）—— <b>本功能数值的唯一来源</b>（卡面/浮窗/结算都由它推导）。</summary>
+    internal const int BasePercent = 50;
+
+    /// <summary>敲后的转入比例（百分点，用户口径 75%）。</summary>
+    internal const int UpgradedPercent = 75;
+
+    /// <summary>百分数 ↔ 比例的分母（100 = "百分数"这个单位的定义；两个换算方向共用）。</summary>
+    private const int PercentBase = 100;
+
+    /// <summary>
+    ///     转入附加的比例（0.5 / 0.75）—— 由卡牌的 <c>OnPlay</c> 按本局 <c>IsUpgraded</c> 写入，默认未敲。
+    ///
+    ///     <para>⚠️ <b>这里刻意不写第二份数值</b>：只由 <see cref="BasePercent" /> /
+    ///     <see cref="UpgradedPercent" /> 经 <see cref="RatioFromPercent" /> 换算得到
+    ///     （纪律：同一个常量只定义一次；卡牌侧只 <b>引用</b> 这两个百分点常量）。</para>
+    /// </summary>
+    internal decimal Ratio = RatioFromPercent(BasePercent);
+
+    /// <summary>百分数 → 比例的**唯一**换算点（卡牌写值、卡面与浮窗显示都走它）。</summary>
+    internal static decimal RatioFromPercent(int percent) => (decimal)percent / PercentBase;
+
+    /// <summary>比例 → 百分数的**唯一**换算点（浮窗注入用）。</summary>
+    internal static int PercentFromRatio(decimal ratio) => (int)Math.Round(ratio * PercentBase);
+
+    /// <summary>
+    ///     ★★ <b>A7 修复点：buff 浮窗的百分比跟随实际比例</b>（原来 <c>powers.json</c> 里硬写 50%）。
+    ///
+    ///     <para><b>为什么必须走这条覆盖</b>（反编译实据，<c>sts2.dll</c>）：
+    ///     <list type="number">
+    ///       <item>Power 的浮窗文案在 <c>PowerModel.HoverTips</c>（<c>PowerModel.cs:350-403</c>）里组装：
+    ///         取 <c>Description</c> → <c>AddDumbVariablesToDescription</c>（<c>:535-540</c>，只注入
+    ///         <c>Amount</c> / <c>singleStarIcon</c> / <c>energyPrefix</c>）→ <c>GetFormattedText()</c>。
+    ///         <b>它不会调用 <c>AddExtraArgsToDescription</c></b> —— 那个钩子**只存在于 <c>CardModel</c>**
+    ///         （<c>CardModel.cs:1545</c>，由 <c>GetDescriptionForPile</c> 在 <c>:1376</c> 调），
+    ///         <c>PowerModel</c> 上**没有**这个方法（全工程 <c>PowerModel</c> 无此成员）。</item>
+    ///       <item>所以"把 <c>{Ratio}</c> 写进 <c>powers.json</c> 再靠 <c>AddExtraArgsToDescription</c> 注入"
+    ///         这条**在 buff 浮窗上根本走不通**：没有注入点。</item>
+    ///       <item>而缺值时的后果是**裸露占位符**而非报错：<c>LocManager.SmartFormat</c>
+    ///         （<c>LocManager.cs:261-285</c>）在 <c>FormattingException</c> 下
+    ///         <c>Log.Error</c> 后 <c>return rawText</c> ⇒ 玩家看到的字面量就是 <c>按 {Ratio}% 转入</c> ✗。
+    ///         （这正是本项目已踩过四次的"整条文案回退成原文"。）</item>
+    ///     </list></para>
+    ///
+    ///     <para><b>因此选的是"在取值处注入"</b>：<c>Description</c> 是 <c>virtual</c>
+    ///     （<c>PowerModel.cs:51</c>），我们把它覆写成"同一个 <c>LocString</c>，但已带上 <c>Ratio</c>"。
+    ///     这样：
+    ///     <list type="bullet">
+    ///       <item>与卡面（<c>Cards-Pack2-B.cs</c> 的 <c>{Ratio}</c>）**同一个数值来源** = 本 Power 的
+    ///         <c>Ratio</c> 字段 ⇒ 不可能脱钩；</item>
+    ///       <item>不新造第二份定义、不改 JSON 结构 ⇒ 不存在"另一处也写了一份 75"的漂移；</item>
+    ///       <item>占位符只在**本类自己注入过之后**才可能被格式化到 ⇒ 结构上不可能裸露（见下方守卫）。</item>
+    ///     </list></para>
+    ///
+    ///     <para>⚠️ <b>为什么可以先读原文再决定注不注</b>：<c>GetRawText()</c> 只读 <c>LocTable</c>，
+    ///     不抛、不格式化；只有原文**确实含** <c>{Ratio}</c> 时才注入 ⇒ 万一将来文案改回写死数字，
+    ///     这里连 <c>Ratio</c> 变量都不会塞进字典，不会与文案里可能存在的同名字段打架。</para>
+    /// </summary>
+    public override LocString Description
+    {
+        get
+        {
+            var loc = base.Description;
+            try
+            {
+                if (loc.GetRawText().Contains("{Ratio}"))
+                {
+                    loc.Add("Ratio", (decimal)PercentFromRatio(Ratio));
+                }
+            }
+            catch (Exception ex)
+            {
+                // 拿不到原文（表未加载等）⇒ 记日志后放行：退化成"文案里若写了 {Ratio} 就会裸露"，
+                // 但这比整个浮窗构造失败要好，且这条 Warn 让根因可查、不静默。
+                OrcaLog.Warn($"[Orca] 归墟：读取浮窗文案原文失败，Ratio 未注入：{ex.Message}");
+            }
+            return loc;
+        }
+    }
 
     /// <summary>重入闸门：我们自己在钩子里 SetCurrentHp 会再次触发钩子。</summary>
     private bool _applying;
@@ -475,11 +552,14 @@ public sealed class OrcaVoidReturnPower : PowerModel
 }
 
 /// <summary>
-///     ★ 栖途（卡牌）的 Power —— 战斗结束时，把 **25% 的战斗临时生命上限**
-///     转化为**真实（永久）生命上限**。
+///     ★ 栖途（卡牌）的 Power —— 战斗结束时，把**一部分战斗临时生命上限**
+///     转化为**真实（永久）生命上限**（未敲 25%，敲后 50%）。
 ///
 ///     <para>用户口径：<i>"（选取遗物-欧洛巴斯之触会获得这张卡牌）战斗结束后，
-///     将你 25% 的临时生命上限转化为真实生命上限"</i>。</para>
+///     将你 25% 的临时生命上限转化为真实生命上限"</i>；卡包2 补充"敲后 50%"。</para>
+///
+///     <para>⚠️ <b>比例存在 Power **实例**上（<c>_ratio</c>），不是 static</b> —— 它在卡牌出牌时
+///     按该卡本局的 <c>IsUpgraded</c> 现算并写入。跨局泄漏（E4）的来龙去脉见 <c>_ratio</c> 的注释。</para>
 ///
 ///     <para>⚠️ <b>与银龙血统的配合</b>：遗物 <c>AfterCombatEnd</c> 会把**剩余**临时上限还原掉。
 ///     我们从共享池 <see cref="OrcaTempHp" /> 里**先 Consume 掉这个比例**，再加到真实上限上
@@ -506,11 +586,71 @@ public sealed class OrcaVoidReturnPower : PowerModel
 /// </summary>
 public sealed class OrcaHomesteadPower : PowerModel
 {
-    /// <summary>转化比例（用户口径：25%）。</summary>
-    /// <summary>★ 卡包2 原文："敲后50%" ⇒ 升级后比例 25% → 50%（由卡牌在 OnUpgrade 里置位）。</summary>
-    internal static bool UpgradedRatio;
+    /// <summary>
+    ///     ★ 卡包2 原文："敲后50%" ⇒ 升级后比例 25% → 50%。
+    ///
+    ///     <para>⚠️ <b>E4 已修（跨局泄漏）</b>：这里**原来**是 <c>internal static bool UpgradedRatio</c>
+    ///     + <c>static Ratio =&gt; UpgradedRatio ? 0.5m : 0.25m</c>，而它只由卡牌的
+    ///     <c>OrcaHomestead.OnUpgrade()</c> 单向置 <c>true</c>、**全工程无任何一处复位**
+    ///     ⇒ static 跨局共享 ⇒ <b>上一局敲过栖途，下一局开局就按敲后的 50% 结算</b> ✗。
+    ///     现改为**本 Power 实例自己的字段**，由卡牌在**每次出牌时**按
+    ///     <c>IsUpgraded</c> 重新写入（同 <c>OrcaVoidReturn.OnPlay</c> 的既有写法）
+    ///     ⇒ "这局敲没敲"完全由卡牌自身状态推导，**没有跨局共享状态可泄漏** ✓。</para>
+    ///
+    ///     <para>⚠️ 这里<b>刻意</b>不再提供任何 static 的"全局比例"—— 比例是<b>本实例</b>的字段；
+    ///     而这个功能的**数值定义**（25 / 50 两个百分点）就在本类里，卡牌的
+    ///     <c>CurrentPercent</c> 只**引用**它（单一来源：卡面 / 日志 / 结算同源）✓</para>
+    /// </summary>
+    private decimal _ratio = RatioFromPercent(BasePercent);
 
-    private static decimal Ratio => UpgradedRatio ? 0.5m : 0.25m;
+    /// <summary>未敲的转化比例（百分点，= 卡面 25%）—— <b>本功能数值的唯一来源</b>。</summary>
+    internal const int BasePercent = 25;
+
+    /// <summary>敲后的转化比例（百分点，= 卡面 50%）。</summary>
+    internal const int UpgradedPercent = 50;
+
+    /// <summary>百分数 ↔ 比例的分母（100 = "百分数"这个单位的定义；两个换算方向共用）。</summary>
+    private const int PercentBase = 100;
+
+    /// <summary>当前转化比例（0.25 或 0.5）—— <b>本实例</b>的，随每次出牌按卡牌是否敲过重新写入。</summary>
+    internal decimal Ratio => _ratio;
+
+    /// <summary>
+    ///     ★ <b>百分数 → 比例的**唯一**换算点</b>：把 <see cref="BasePercent" /> /
+    ///     <see cref="UpgradedPercent" /> 一次性除成 <c>Ratio</c> 要用的 0.25 / 0.5，
+    ///     免得 100 这个换算因子散落在多处（与 <c>OrcaBloodNirvanaPower.HealRatioDisplay</c>
+    ///     的"显示 ↔ 结算同源"是同一套路，只是方向相反）。
+    /// </summary>
+    internal static decimal RatioFromPercent(int percent) => (decimal)percent / PercentBase;
+
+    /// <summary>比例 → 百分数的**唯一**换算点（日志与卡面显示同源）。</summary>
+    internal static int PercentFromRatio(decimal ratio) => (int)Math.Round(ratio * PercentBase);
+
+    /// <summary>
+    ///     ★ 由卡牌在出牌时写入**本实例**的转化比例（敲后 50%，否则 25%）。
+    ///
+    ///     <para>⚠️ 复用"同一个生物身上只有一份"的简化：与 <c>OrcaVoidReturnPower</c> 同理，
+    ///     我们假设同一时刻身上至多只有一张栖途生效（用户口径：该牌由欧洛巴斯之触给一张）。
+    ///     若将来真能同场叠两张（一敲一未敲），这里**后者覆盖前者** —— 记 Warn，不静默。</para>
+    ///
+    ///     <para>★ 边界显式：百分点非法 ⇒ 记 Warn 并拒绝写入（保持默认），绝不静默接受。
+    ///     这里**不再**做"比例 ↔ 百分点互校" —— 数值只有本类这一份定义，
+    ///     结构上已不存在"两处各写一份导致脱钩"的可能，那道自校没有对象了。</para>
+    /// </summary>
+    /// <param name="percent">未敲 / 敲后的百分点（只接受 <see cref="BasePercent" /> 或 <see cref="UpgradedPercent" />）。</param>
+    internal void SetRatio(int percent)
+    {
+        if (percent != BasePercent && percent != UpgradedPercent)
+        {
+            OrcaLog.Warn($"[Orca] 栖途：收到非法的转化百分点 {percent}（合法值只有 {BasePercent} / {UpgradedPercent}）"
+                       + $" ⇒ 本实例仍按 {PercentFromRatio(_ratio)}% 结算");
+            return;
+        }
+
+        _ratio = RatioFromPercent(percent);
+        OrcaLog.Info($"[Orca] 栖途：本实例转化比例已按本局卡牌状态写入 = {PercentFromRatio(_ratio)}%"
+                   + $"（本局{(percent == UpgradedPercent ? "**已敲**" : "**未敲**")}；仅作用于本实例，无跨局静态状态）");
+    }
 
     public override PowerType Type => PowerType.Buff;
 
@@ -555,7 +695,10 @@ public sealed class OrcaHomesteadPower : PowerModel
                                 + "但**身上没有银龙血统** ⇒ 无法并进本场基准（收尾可能把这笔再加一次）");
                 }
 
-                OrcaLog.Info($"[Orca] 栖途：战斗结束 ⇒ 临时生命上限 {pool} 的 {Ratio:P0}"
+                // ⚠️ 这里刻意**不用** `{Ratio:P0}` 那种"格式化成百分比"的写法：中文/日文 locale 下
+                //    `P` 格式串会带上本地化的百分号与不换行空格，日志里对不上卡面的"25 / 50"。
+                //    改走与卡面同一个整数口径（PercentFromRatio），日志与卡面必然同源。
+                OrcaLog.Info($"[Orca] 栖途：战斗结束 ⇒ 临时生命上限 {pool} 的 {PercentFromRatio(Ratio)}%"
                          + $"，共 {used} 点转化为**真实生命上限**（当前上限 {me.MaxHp}）", 2);
             }
         }

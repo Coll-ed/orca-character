@@ -20,7 +20,7 @@
   "ORCA_MOLTEN_BONE_POWER.title": "生死一线",
   "ORCA_OVERLOOK_POWER.description": "打出的牌额外打出一次（每多打出一次消耗 1 层）。",
   "ORCA_OVERLOOK_POWER.title": "睥睨",
-  "ORCA_VOID_RETURN_POWER.description": "场上所有角色无法回复生命；被阻止的回复按 50% 转入[gold]嗜血龙剑[/gold]的伤害附加。",
+  "ORCA_VOID_RETURN_POWER.description": "场上所有角色无法回复生命；被阻止的回复按 {Ratio}% 转入[gold]嗜血龙剑[/gold]的伤害附加。",
   "ORCA_VOID_RETURN_POWER.title": "归墟",
   "ORCA_EMBER_WING_GUARD_POWER.title": "烬血之翼",
   "ORCA_EMBER_WING_GUARD_POWER.description": "【翱翔】按层数消耗：受到敌人未被格挡的伤害时层数 -1，归零时消失（敲后不再于回合开始时消失）。"

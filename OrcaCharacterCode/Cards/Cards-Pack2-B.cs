@@ -127,12 +127,16 @@ public sealed class OrcaOverlook : OrcaCard
 }
 
 /// <summary>
-///     ★ 栖途（3 费 · **银龙** · **能力牌 Power** · **先古 Ancient**，敲后减费）。
+///     ★ **归墟**（2 费 · Power · Uncommon · Self，见下方构造函数）——
+///     场上所有角色无法回复生命；被阻止的回复按一定比例转入【嗜血龙剑】的伤害附加。
 ///
-///     <para>用户口径：<i>"（选取遗物-欧洛巴斯之触会获得这张卡牌）战斗结束后，
-///     将你 25% 的临时生命上限转化为真实生命上限"</i>。</para>
+///     <para>用户口径：比例 50%，敲后 75%（两个百分点数值定义在
+///     <see cref="OrcaVoidReturnPower" /> 的 <c>BasePercent</c> / <c>UpgradedPercent</c>，
+///     本卡牌侧只引用，不另存副本）。</para>
 ///
-///     <para>与遗物「银龙血统」共享 <see cref="OrcaTempHp" /> 池，转化逻辑见 <see cref="OrcaHomesteadPower" />。</para>
+///     <para>⚠️ <b>2026-10-05 订正</b>：本摘要原来写的是「栖途（3 费 · 银龙 · 能力牌 Power ·
+///     先古 Ancient，敲后减费）」—— 那是**另一张卡** <see cref="OrcaHomestead" /> 的说明，
+///     串到这里了（**既有笔误**，不是本次改动引入的）。按本类实际实现订正，免得误导下一个读代码的人。</para>
 /// </summary>
 public sealed class OrcaVoidReturn : OrcaCard
 {
@@ -141,13 +145,22 @@ public sealed class OrcaVoidReturn : OrcaCard
     /// <summary>2 费 · Power · Uncommon · Self。</summary>
     public OrcaVoidReturn() : base(2, (CardType)3, (CardRarity)3, (TargetType)1) { }
 
+    /// <summary>
+    ///     本局的转入比例（敲后 75%，否则 50%）—— 卡面、日志、Power 结算共用这一个口径。
+    ///
+    ///     <para>★ 两个百分点数值**定义在 <see cref="OrcaVoidReturnPower" /> 里**，这里只**引用**
+    ///     （纪律：同一个常量只定义一次；卡牌侧不再各留一份副本，比例换算也走 Power 侧的
+    ///     <see cref="OrcaVoidReturnPower.RatioFromPercent" />）。</para>
+    /// </summary>
+    private int CurrentPercent => IsUpgraded ? OrcaVoidReturnPower.UpgradedPercent : OrcaVoidReturnPower.BasePercent;
+
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
         var power = await PowerCmd.Apply<OrcaVoidReturnPower>(ctx, Owner.Creature, 1m, Owner.Creature, this);
-        if (power != null && IsUpgraded) power.Ratio = 0.75m;
+        if (power != null) power.Ratio = OrcaVoidReturnPower.RatioFromPercent(CurrentPercent);
 
         OrcaLog.Info($"[Orca] 归墟：场上所有角色的回复将被阻止，"
-                 + $"其中 {(IsUpgraded ? 75 : 50)}% 转入【嗜血龙剑】的附加伤害", 2);
+                 + $"其中 {CurrentPercent}% 转入【嗜血龙剑】的附加伤害", 2);
     }
 
     /// <summary>
@@ -159,7 +172,7 @@ public sealed class OrcaVoidReturn : OrcaCard
     {
         // ★ 2026-10-04 恢复并修正：A7 原被 TOGGLE-OFF 注释掉 ⇒ 卡面里的 {Ratio} 没有值
         //   ⇒ SmartFormat 失败 ⇒ 整条卡面回退成原文。且必须用 DynamicVar（裸值同样会失败）。
-        description.Add(new DynamicVar("Ratio", (decimal)(IsUpgraded ? 75 : 50)));
+        description.Add(new DynamicVar("Ratio", (decimal)CurrentPercent));
     }
 
     /// <summary>敲后：比例 50% → **75%**（在 OnPlay 里按 <c>IsUpgraded</c> 写入 Power）。</summary>
