@@ -150,7 +150,7 @@ internal static class OrcaOrobasCardOptionPatch
                         OrcaLog.Warn("[Orca] 欧洛巴斯·栖途选项：拿不到 Owner ⇒ 本次没给牌", 2);
                         return;
                     }
-                    await OrcaPack2Acquisition.GrantToDeck(owner, card, "欧洛巴斯之触（卡牌选项）");
+                    await OfferHomesteadReward(owner, "欧洛巴斯之触（卡牌选项）");
                 },
                 new MegaCrit.Sts2.Core.Localization.LocString(LocFile, OptionTitleKey),
                 new MegaCrit.Sts2.Core.Localization.LocString(LocFile, OptionDescriptionKey),
@@ -164,6 +164,47 @@ internal static class OrcaOrobasCardOptionPatch
         {
             // ★ 出错就不改（__result 保持原样）：宁可让人拿到头环，也不能把事件页弄坏
             OrcaLog.Warn($"[Orca] 欧洛巴斯之触·换卡牌选项出错（保持原样）：{ex.Message}", 2);
+        }
+    }
+
+    /// <summary>
+    ///     把【栖途】作为**奖励**发出去（**不是**直接塞进卡组）。
+    ///
+    ///     <para><b>为什么必须走奖励流程</b>（用户 2026-10-05：<i>"没有像其他牌一样，出现卡牌加入到卡组的动画"</i>）：
+    ///     直接 <c>CardPileCmd.Add(card, PileType.Deck)</c> 只是把牌放进卡组 —— **没有奖励界面，
+    ///     也就没有那套"卡牌飞进卡组"的动画**。走奖励流程才有。</para>
+    ///
+    ///     <para><b>引擎自己的写法（两处实据，照抄）</b>：
+    ///     <code>
+    ///     // Commands/RewardsCmd.cs:49 与 Models/Relics/NeowsBones.cs:44
+    ///     await new RewardsSet(player).WithCustomRewards(rewards).Offer();
+    ///     </code>
+    ///     奖励对象用 <c>SpecialCardReward</c>（引擎原文：*"A reward that adds a specific card to
+    ///     the player's deck"*，构造签名 <c>SpecialCardReward(CardModel, Player)</c>）。</para>
+    ///
+    ///     <para>⚠️ 兜底：万一奖励流程抛错（例如当前不在能开奖励界面的时机），**退回直接进卡组**
+    ///     —— 宁可少个动画，也不能让玩家拿不到这张牌。</para>
+    /// </summary>
+    internal static async Task OfferHomesteadReward(Player owner, string reason)
+    {
+        try
+        {
+            var card = ModelDb.Card<OrcaHomestead>();
+            var rewards = new List<MegaCrit.Sts2.Core.Rewards.Reward>
+            {
+                new MegaCrit.Sts2.Core.Rewards.SpecialCardReward(card, owner),
+            };
+
+            await new MegaCrit.Sts2.Core.Rewards.RewardsSet(owner)
+                .WithCustomRewards(rewards)
+                .Offer();
+
+            OrcaLog.Info($"[Orca] {reason}：已把【栖途】作为奖励发出（走奖励界面 ⇒ 有加入卡组的动画）", 2);
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] {reason}：发奖励失败 ⇒ 退回直接进卡组：{ex.Message}", 2);
+            await OrcaPack2Acquisition.GrantToDeck(owner, ModelDb.Card<OrcaHomestead>(), reason);
         }
     }
 }
@@ -206,8 +247,10 @@ internal static class OrcaOrobasDirectObtainPatch
             }
 
             OrcaLog.Info("[Orca] 欧洛巴斯之触（直接获得，没走事件页）：拦下起始遗物强化，改为给【栖途】", 2);
-            TaskHelper.RunSafely(OrcaPack2Acquisition.GrantToDeck(
-                owner, ModelDb.Card<OrcaHomestead>(), "欧洛巴斯之触（直接获得）"));
+
+            // ★ 同样走**奖励流程**（而非直接塞卡组）⇒ 与事件页那条路一致，都有"加入卡组"的动画
+            TaskHelper.RunSafely(OrcaOrobasCardOptionPatch.OfferHomesteadReward(
+                owner, "欧洛巴斯之触（直接获得）"));
 
             return false;                    // ★ 跳过原方法：不做那次 RelicCmd.Replace
         }
