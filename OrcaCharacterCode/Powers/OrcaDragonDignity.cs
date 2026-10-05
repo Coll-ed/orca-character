@@ -21,8 +21,9 @@ namespace OrcaCharacter;
 ///     <c>(CardModel)(object)this</c> 强转、<c>(IEnumerable&lt;CardKeyword&gt;)(object)</c> 数组转换、
 ///     两行 <c>//IL_</c> 残留与数字化枚举。</para>
 ///
-///     <para>★ 枚举已查证：<c>CardKeyword.Exhaust=1</c>（该牌消耗 ✓ 规格「消耗」）、
-///     <c>CardType.Skill=2</c>、<c>CardRarity.Uncommon=3</c>、<c>TargetType.Self=1</c>。</para>
+///     <para>★ 枚举已查证：<c>CardType.Skill=2</c>、<c>CardRarity.Uncommon=3</c>、
+///     <c>TargetType.Self=1</c>。（旧注释里的 <c>CardKeyword.Exhaust=1</c> 随 A5 一并删除 —— 见下方
+///     <c>CanonicalKeywords</c> 处的裁定说明：权威没有「消耗」。）</para>
 /// </summary>
 public sealed class OrcaDragonDignity : OrcaCard
 {
@@ -38,8 +39,27 @@ public sealed class OrcaDragonDignity : OrcaCard
     /// <summary>无色：不改变能量球形态。</summary>
     public override OrcaOrbForm OrbForm => OrcaOrbForm.None;
 
-    /// <summary>消耗。</summary>
-    public override IEnumerable<CardKeyword> CanonicalKeywords => new[] { CardKeyword.Exhaust };
+    /// <summary>
+    ///     ★★ 2026-10-05（A5）裁定：**本卡没有【消耗】关键词**。
+    ///
+    ///     <para>权威 <c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> L31 原文：
+    ///     <i>「1费，无色，蓝卡，技能牌，敲后为2易2虚」</i>—— **通篇没有「消耗」**，
+    ///     且敲后不取消 ⇒ 原实现比权威多一个「消耗」。</para>
+    ///
+    ///     <para>反证「不是漏写」：同批「睥睨」在**同一份权威** L39 写作
+    ///     <i>「1费用，银龙，金卡，技能卡，消耗，敲后去消耗」</i>—— 该权威会明确写「消耗」，
+    ///     龙之威仪这行不写即为没有。</para>
+    ///
+    ///     <para>用户 2026-10-05 裁定：「按 work 权威改」⇒ 去掉本卡的 <c>Exhaust</c>。</para>
+    ///
+    ///     <para>⚠ 改法依据（本项目历史坑）：<c>CardModel.LocalKeywords</c> 是
+    ///     <c>_keywords ??= UnionWith(CanonicalKeywords)</c> —— **关键词只算一次就缓存**，
+    ///     所以去掉关键词必须让 <c>CanonicalKeywords</c> 本身**不含**它。本卡属**静态**
+    ///     <c>CanonicalKeywords</c>（全项目无任何一处对本卡调用 <c>AddKeyword</c>）⇒ 不走
+    ///     <c>RemoveKeyword</c>；后者是给"敲前有、敲后没有"那种卡用的（见 <c>Cards-Sword.cs</c>
+    ///     OrcaCrimsonTemper 的反编译实据）。</para>
+    /// </summary>
+    public override IEnumerable<CardKeyword> CanonicalKeywords => Array.Empty<CardKeyword>();
 
     public OrcaDragonDignity()
         : base(1, CardType.Skill, CardRarity.Uncommon, TargetType.Self)
