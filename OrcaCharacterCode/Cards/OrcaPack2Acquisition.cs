@@ -28,6 +28,12 @@ namespace OrcaCharacter;
 internal static class OrcaPack2Acquisition
 {
     /// <summary>
+    ///     卡牌入牌组动画的时长（秒）。**数值来源＝引擎自己**：
+    ///     <c>SpecialCardReward.OnSelect()</c> 里写的就是 <c>CardCmd.PreviewCardPileAdd(result, 2f)</c>
+    ///     ⇒ 用具名常量保持单一来源，避免把 2f 散落在调用处。
+    /// </summary>
+    private const float PreviewCardPileAddSeconds = 2f;
+    /// <summary>
     ///     把一张卡加进玩家牌组（**已有的同类卡就不再给**，避免重复）。
     ///     全部包 try/catch：给卡失败绝不影响别的流程。
     /// </summary>
@@ -68,6 +74,13 @@ internal static class OrcaPack2Acquisition
             int deckCount = player.Deck?.Cards.Count() ?? -1;
             if (result.success)
             {
+                // ★★★ 2026-10-05：**「卡牌加入卡组」的动画就是这一句**（引擎自己的写法，实据如下）：
+                //     // MegaCrit.Sts2.Core.Rewards.SpecialCardReward.OnSelect()
+                //     CardPileAddResult result = await CardPileCmd.Add(_card, PileType.Deck);
+                //     if (result.success) { CardCmd.PreviewCardPileAdd(result, 2f); }
+                //   ⇒ 之前为了"要动画"去走奖励界面（RewardsSet.Offer），在事件回调里**死锁**（见方法头注释）；
+                //     正解是这一句：不动事件流程、不弹界面，动画照有 ✓
+                CardCmd.PreviewCardPileAdd(result, PreviewCardPileAddSeconds);
                 OrcaLog.Info($"[Orca] {reason} ⇒ 获得卡牌【{card.Title}】（已入牌堆，牌组现有 {deckCount} 张）", 2);
             }
             else
