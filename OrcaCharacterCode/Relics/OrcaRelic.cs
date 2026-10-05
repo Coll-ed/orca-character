@@ -423,6 +423,89 @@ public sealed class OrcaBloodline : RelicModel
                   + $"（并入战斗中赚到的真实 +{gain} ⇒ 之后每回合重挂与战斗结束还原都会算上它）", 2);
     }
 
+    /// <summary>
+    ///     ★★ **把一笔临时生命上限从生物身上真正摘掉** —— 2026-10-05 修「浴血涅槃·临时上限泄漏」。
+    ///
+    ///     <para><b>修的是什么</b>：<see cref="OrcaBloodNirvanaPower" /> 的 <c>SettleFromLethal</c> 原先只调
+    ///     <c>OrcaTempHp.Consume(全部)</c> —— 那只减**账本**（共享池），**一个字都没动生物身上的
+    ///     <c>MaxHp</c>**。而本类的收尾是**绝对写回** <c>target = Max(basis, me.MaxHp − pool_rem)</c>
+    ///     （见 <see cref="AfterCombatEnd" />），池子被清零后 <c>pool_rem = 0</c>
+    ///     ⇒ <c>target = basis + pool_at_settle</c> ⇒ 那笔"被消耗掉"的临时上限**被永久坐实成真实上限**。
+    ///     又因为恒有 <c>basis ≤ me.MaxHp</c>，<c>Math.Max</c> 那个兜底在这种情况下**永远救不了**
+    ///     （它只防"低于基准"，不防"高于基准"）。</para>
+    ///
+    ///     <para><b>为什么必须走这里、而不是 Power 里直接 <c>CreatureCmd.SetMaxHp</c></b>：
+    ///     降上限会**截断当前生命**（引擎把 CurrentHp 钳到新上限）⇒ 再次触发
+    ///     <see cref="AfterCurrentHpChanged" />；而浴血涅槃此刻正把生命钳在 1 点，截断几乎必然发生
+    ///     ⇒ 钩子互相打架。本类的重入闸门 <see cref="_applying" /> 正是为这种操作准备的
+    ///     （开合写法与 <see cref="AfterPlayerTurnStart" /> / <see cref="AfterCombatEnd" /> 逐字一致），
+    ///     所以这一步必须**在类内**完成。</para>
+    ///
+    ///     <para><b>递减量口径 = 「实际挂着的临时上限」，不是"消耗掉多少"</b>
+    ///     （<c>attached = Max(0, me.MaxHp − basis)</c>，再 <c>dec = Min(amount, attached)</c>）。
+    ///     理由是仓库里对"引擎到底会不会在回合边界把本地玩家上限同步回持久值"有**冲突证据**：
+    ///     <see cref="_combatBaseMaxHp" /> 记的 2026-09-17 实机日志说"会清"，
+    ///     而 2026-10-05 的全量 IL 扫描找不到该清除路径（唯一同步点带 <c>IsMe</c> 守卫 ⇒ 只同步别人）。
+    ///     ⇒ 本方法必须**在两种世界下都安全**：
+    ///     <list type="bullet">
+    ///       <item><b>引擎没清</b>（上限上确实挂着这笔）⇒ <c>attached == 这笔</c> ⇒ 递减它 ✓</item>
+    ///       <item><b>引擎已清</b>（<c>me.MaxHp</c> 已回基准）⇒ <c>attached == 0</c> ⇒ <c>dec == 0</c>
+    ///         ⇒ <b>不碰上限</b>，绝不会把上限压到基准以下 ✗ 避免。</item>
+    ///     </list>
+    ///     若反过来无脑按消耗量递减，第二种世界下就会把**基准**一起削掉 = 永久掉上限，
+    ///     且与 <see cref="AfterCombatEnd" /> 的 <c>Math.Max(basis, …)</c> 兜底无关（那是收尾时才算的账）。</para>
+    ///
+    ///     <para><b>返回值</b>：实际从上限摘掉的量（0 = 没碰上限，含"没挂"与"拿不到基准"两种情形），
+    ///     调用方据此记日志。**边界一律显式**：<c>amount &lt; 0</c> 直接返回 0（不该发生）；
+    ///     基准未记录 ⇒ <c>Warn</c> + 返回 0（**不静默吞**、不凭空造基准）；
+    ///     <c>dec == 0</c> ⇒ <c>Info</c> + 返回 0；新上限还夹一道 <c>&gt;= 1</c> 的保护。</para>
+    /// </summary>
+    /// <param name="amount">想摘掉的临时上限（&gt; 0）；实际摘掉量取它与"身上挂着的量"的较小值。</param>
+    /// <returns>实际从 <c>MaxHp</c> 上摘掉的量。</returns>
+    internal async Task<decimal> ConsumeAttachedTempMaxHp(decimal amount)
+    {
+        if (amount < 0) return 0;               // 负值无意义（调用方传的是池子消耗量，恒 ≥ 0）
+
+        var me = Owner?.Creature;
+        if (me == null) return 0;               // 没生物可摘（遗物尚未挂到玩家身上）
+
+        // ★★ 基准未记录 —— 与 AdvanceCombatBase 同一套边界纪律（见其注释）：**不凭空造基准**。
+        //    成因很清楚：(_combatBaseMaxHp) 由 AfterPlayerTurnStart 在**本场第一个回合开始**时记录、
+        //    由 AfterCombatEnd 归零。浴血涅槃只能"打出牌之后、战斗结束之前"触发 ⇒ 基准必然已记录。
+        //    走到这里说明有别的路径绕过钩子改了上限（别的 mod / 控制台）⇒ 此刻 MaxHp 里的临时成分
+        //    无法判定，任何"猜"都可能把基准削掉，故**只记日志、不动上限**
+        //    （代价是那笔临时上限仍会被收尾坐实 —— 与修前同级，不会更坏）。
+        if (_combatBaseMaxHp <= 0)
+        {
+            OrcaLog.Warn($"[Orca] 银龙血统：收到摘除临时上限 {amount}，但本场基准未记录"
+                      + "（战斗尚未开始或已结束）⇒ 不碰上限，只消耗账本", 2);
+            return 0;
+        }
+
+        decimal before = me.MaxHp;
+        decimal basis = _combatBaseMaxHp;
+
+        // ★ 口径见方法摘要：只摘**身上确实挂着**的那部分。
+        decimal attached = Math.Max(0m, before - basis);
+        decimal dec = Math.Min(amount, attached);
+
+        if (dec <= 0)
+        {
+            OrcaLog.Info($"[Orca] 银龙血统：临时上限消耗 {amount}，但上限 {before} 上没挂着临时成分"
+                      + $"（基准 {basis}）⇒ 不改上限", 2);
+            return 0;
+        }
+
+        decimal target = Math.Max(1m, before - dec);   // 下限夹一道，绝不把上限压到 1 以下
+        _applying = true;                              // ★ 同上：降上限会截断当前生命，屏蔽钩子重入
+        try { await CreatureCmd.SetMaxHp(me, target); }
+        finally { _applying = false; }
+
+        OrcaLog.Info($"[Orca] 银龙血统：临时上限消耗 {amount} ⇒ 实际从上限摘掉 {dec}"
+                  + $"（上限 {before} → {me.MaxHp}，基准 {basis}）", 2);
+        return dec;
+    }
+
     /// <summary>统一的触发表现：原版遗物闪光特效 + 能量球形态切回龙头 + 日志。</summary>
     private void TriggerFx(string what)
     {

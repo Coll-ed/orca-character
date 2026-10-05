@@ -358,6 +358,35 @@ public sealed class OrcaBloodNirvanaPower : PowerModel
             decimal pool = OrcaTempHp.Current;
             decimal used = OrcaTempHp.Consume(pool);
 
+            // ①′ ★★ 2026-10-05 修「临时上限泄漏」：Consume 只减**账本**（共享池），生物身上的
+            //     `MaxHp` 一点没动 ⇒ 银龙血统收尾那次**绝对写回**（target = Max(basis, MaxHp − pool_rem)）
+            //     在 pool_rem == 0 时会把 target 算成 `basis + 本笔` ⇒ 被"消耗"的临时上限**永久坐实**。
+            //     ⇒ 必须**紧随其后、经遗物内部带闸门的路径**把它从上限上真正摘掉
+            //     （Power 里直接 CreatureCmd.SetMaxHp 会绕过重入闸门 _applying ⇒ 降上限截断当前生命
+            //       ⇒ 二次触发 `AfterCurrentHpChanged` ⇒ 钩子互相打架；此刻生命正被钳在 1 点，几乎必然触发）。
+            //     ⚠️ 取遗物必须经 `Creature.Player`：`PowerModel.Owner` 是 **Creature** 不是 Player
+            //       ⇒ `Owner.GetRelic<...>()` 会是 CS1061（只有真编译能抓到），
+            //       与同文件上方「栖途」处写法一致（同为 Owner?.Player?.GetRelic<OrcaBloodline>()）。
+            //     拿不到遗物 ⇒ **记 Error（不静默吞）**，且消耗账本 / 回血的既有逻辑照旧执行。
+            if (Owner != null)
+            {
+                var bloodline = Owner.Player?.GetRelic<OrcaBloodline>();
+                if (bloodline != null)
+                {
+                    // 递减量由遗物按「实际挂着的临时上限 = Max(0, MaxHp − 基准)」自行裁剪
+                    // （引擎可能已在回合边界把上限同步回基准 ⇒ 此时实际摘掉 0，绝不压到基准以下）。
+                    decimal removed = await bloodline.ConsumeAttachedTempMaxHp(used);
+                    OrcaLog.Info($"[Orca] 浴血涅槃：临时上限消耗 {used} ⇒ 实际上限摘掉 {removed}"
+                             + $"（当前上限 {Owner.MaxHp}）", 2);
+                }
+                else
+                {
+                    OrcaLog.Error($"[Orca] 浴血涅槃：账本已消耗 {used} 点临时上限，"
+                                + "但**身上没有银龙血统** ⇒ 无法把上限从生物身上摘掉"
+                                + "（本场战斗收尾可能把这笔坐实成真实上限）");
+                }
+            }
+
             // ② 回复其中的 50%（向下取整，与 HealRatio 同源；旧注释写 40% 是过期口径）
             int heal = (int)Math.Floor(used * HealRatio);
             if (heal > 0 && Owner != null)
