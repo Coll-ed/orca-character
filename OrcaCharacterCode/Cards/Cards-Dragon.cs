@@ -141,11 +141,17 @@ public sealed class OrcaNirvanaGrasp : OrcaCard
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
-        // ① 选一张手牌消耗（排除自己；允许取消 ⇒ 取消就等于只回血）
+        // ① 选一张手牌消耗（排除自己；**不允许取消** —— 见下方 A6 裁定）
+        // ★★ 2026-10-05（A6）裁定：**不可取消**。
+        //   权威 work/奥卡卡包集/卡牌包1/卡牌说明1.txt L29 原文：
+        //   「消耗一张牌，回复10%最大生命上限的生命」—— 「消耗一张牌」是**必付代价**；
+        //   原实现 Cancelable = true ⇒ 玩家可取消，取消的后果是"只回血、不消耗牌"，与权威不符。
+        //   用户 2026-10-05 裁定「按 work 权威改」⇒ Cancelable = false。
+        //   （对比：焚卷入典 / 龙族魔典那类"选牌"保持可取消，本卡按权威改为强制。）
         var picked = await CardSelectCmd.FromHand(
             ctx,
             Owner,
-            new CardSelectorPrefs(NirvanaPrompt, 1) { Cancelable = true, PretendCardsCanBePlayed = true },
+            new CardSelectorPrefs(NirvanaPrompt, 1) { Cancelable = false, PretendCardsCanBePlayed = true },
             c => c != play.Card,
             this);
 
