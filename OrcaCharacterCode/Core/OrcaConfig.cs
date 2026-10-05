@@ -131,8 +131,10 @@ internal class OrcaConfig : SimpleModConfig
     ///     每次死亡随机抽一条 —— 与其他 <c>Custom*</c> 是同一套分隔约定
     ///     （见 <see cref="Split" />）。</para>
     ///
-    ///     <para><b>生效条件</b>：需把上面的 <see cref="Preset" /> 设为「自定义预设」
-    ///     （与其它自定义台词一致）。<b>留空</b> = 这种情况不替换，结束画面用引擎原文。</para>
+    ///     <para><b>生效条件</b>：★ <b>不受「台词预设」影响，开箱即用</b> ——
+    ///     与其他 <c>Custom*</c> 气泡台词**不同**（那些要先把 <see cref="Preset" /> 设为自定义，
+    ///     因为留空时它们要回落到内置台词库；死亡台词没有"内置库"可回落）。
+    ///     这里填什么就用什么，<b>留空</b>才表示"这种情况不替换、结束画面用引擎原文"。</para>
     /// </summary>
     public static string CustomBurnDeath { get; set; } = "银龙奥卡与{enemies}一同被火焰烧成了灰烬";
 
