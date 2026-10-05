@@ -135,6 +135,15 @@ internal class OrcaConfig : SimpleModConfig
     ///     与其他 <c>Custom*</c> 气泡台词**不同**（那些要先把 <see cref="Preset" /> 设为自定义，
     ///     因为留空时它们要回落到内置台词库；死亡台词没有"内置库"可回落）。
     ///     这里填什么就用什么，<b>留空</b>才表示"这种情况不替换、结束画面用引擎原文"。</para>
+    ///
+    ///     <para>⚠️ <b>别把占位符写进 settings_ui.json 的悬停说明里</b>（2026-10-05 踩过）：
+    ///     那边走 <c>LocString.GetFormattedText()</c> ⇒ 经 <c>LocManager.SmartFormat</c>；
+    ///     说明文字里的 <c>{enemies}</c> 是**给人看的示例、没有绑定值** ⇒ 每次构建悬停都会
+    ///     <c>Log.Error("Localization formatting error!")</c> + 上报 Sentry，然后回退成原文 ✗
+    ///     （<c>LocValidator</c> 只查语法不查绑定，所以**不会**在加载期拦住它，属于静默噪声）。
+    ///     悬停说明里改用文字描述（"用一对大括号把 enemies 包起来"）；
+    ///     <b>本属性的默认值</b>里的占位符是**功能必需**的（由 <c>OrcaDeathQuotes.TryBuild</c>
+    ///     自己做字符串替换，不经 SmartFormat），保留 ✓</para>
     /// </summary>
     public static string CustomBurnDeath { get; set; } = "银龙奥卡与{enemies}一同被火焰烧成了灰烬";
 

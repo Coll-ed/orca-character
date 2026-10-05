@@ -34,5 +34,5 @@
   "ORCACHARACTER-CUSTOM_HEAL.title": "回血台词（自定义）",
   "ORCACHARACTER-CUSTOM_HEAL.hover.desc": "回复生命时说的话。多句用 | 分隔。留空则用内置台词。",
   "ORCACHARACTER-CUSTOM_BURN_DEATH.title": "死亡台词·与敌同归于尽（焚烧）",
-  "ORCACHARACTER-CUSTOM_BURN_DEATH.hover.desc": "【游戏结束画面】上显示的死亡台词：你和敌人被同一次【焚烧】一起烧死时用它替换原文（生死一线）。{enemies} 会换成逗号分隔的敌人名，例：银龙奥卡与{enemies}一同被火焰烧成了灰烬。多条用竖线 | 分隔、随机抽一条。留空 = 这种情况不替换、用原文。★ 本项不受上面的「台词预设」影响，填了就生效。"
+  "ORCACHARACTER-CUSTOM_BURN_DEATH.hover.desc": "【游戏结束画面】上显示的死亡台词：你和敌人被同一次【焚烧】一起烧死时用它替换原文（生死一线）。插入敌人名字：写一个占位符，即用一对大括号把 enemies 包起来（与默认值里那处完全相同），运行时会换成逗号分隔的敌人名（例：史莱姆, 酸液史莱姆）。多条用竖线 | 分隔、随机抽一条。留空 = 这种情况不替换、用原文。★ 本项不受上面的「台词预设」影响，填了就生效。"
 }
