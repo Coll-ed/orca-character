@@ -100,9 +100,19 @@ public sealed class OrcaBurnPower : PowerModel
         return n;
     }
 
-    /// <summary>数场上还有几个带【焚烧】的存活单位。</summary>
+    /// <summary>数场上还有几个带【焚烧】的存活单位。
+    ///
+    ///     <para>★★ 2026-10-05 <b>用户裁定 A4-b</b>：权威「将当前**场上所有**存在的【焚烧】立刻触发一次」
+    ///     ⇒ "场上所有"＝**双方都算**（原先写死 <c>CombatSide.Enemy</c>，比我方/召唤物身上的焚烧漏掉了）。</para>
+    ///
+    ///     <para>API 实据（<c>ICombatState</c>）：<c>IReadOnlyList&lt;Creature&gt; Creatures</c>
+    ///     —— <i>"Get all creatures in the combat on all sides."</i></para>
+    ///
+    ///     <para>⚠️ 只改**来源集合**（谁身上的焚烧会炸）；**伤害目标**仍按权威「敌人全体会受到伤害」
+    ///     取敌方 —— 两件事不要混。</para>
+    /// </summary>
     private static int CountBurning(ICombatState combat)
-        => combat.GetCreaturesOnSide(CombatSide.Enemy)
+        => combat.Creatures
                  .Count(c => !c.IsDead && (c.GetPower<OrcaBurnPower>()?.Amount ?? 0) > 0);
 
     /// <summary>
@@ -121,7 +131,11 @@ public sealed class OrcaBurnPower : PowerModel
         bool consumeStacks,
         string why)
     {
-        List<Creature> burning = combat.GetCreaturesOnSide(CombatSide.Enemy)
+        // ★★ 2026-10-05 用户裁定 A4-b：来源集合＝**场上所有**（双方都算），照权威
+        //    「将当前场上所有存在的【焚烧】立刻触发一次」。
+        //    API 实据：ICombatState.Creatures = "Get all creatures in the combat on all sides."
+        //    ⚠️ 别把这里和下面"伤害波及谁"混起来 —— 伤害目标按权威仍是**敌人全体**（见下方 alive）。
+        List<Creature> burning = combat.Creatures
             .Where(c => !c.IsDead && (c.GetPower<OrcaBurnPower>()?.Amount ?? 0) > 0)
             .ToList();
         if (burning.Count == 0) return;
