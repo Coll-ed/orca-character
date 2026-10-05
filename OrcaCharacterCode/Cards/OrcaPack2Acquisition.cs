@@ -301,11 +301,30 @@ internal static class OrcaOrobasDirectObtainPatch
                 return true;
             }
 
-            OrcaLog.Info("[Orca] 欧洛巴斯之触（直接获得，没走事件页）：拦下起始遗物强化，改为给【栖途】", 2);
+            // ★★★ 2026-10-05 诊断性实验（用户点出的方向：「你不会忘记后面加一个宣告事件结束了吧？
+            //     你不要忘记我们是拦截了整个欧洛巴斯之触的代码的」）：
+            //     改为 **return true ＝ 不拦截**，让引擎自己的 AfterObtained 完整跑完，
+            //     以判定"事件卡死"是否由我们**整段跳过**它引起。
+            //     代价（明确接受）：起始遗物这次**会被换成头环**（原版行为），
+            //     因为不做那次 RelicCmd.Replace 才是拦截的目的。
+            //     若"不拦截"后事件**不再卡死** ⇒ 证实是我们的拦截导致事件收不到完成信号，
+            //     下一步就改为"只压掉替换、不压掉整个方法"的窄口径做法；
+            //     若**仍然卡死** ⇒ 与拦截无关，方向转到事件流程本身。
+            OrcaLog.Info("[Orca] 欧洛巴斯之触：拦下起始遗物强化，改为给【栖途】；随后**补一次事件收尾**", 2);
 
-            // ★ 同样走**奖励流程**（而非直接塞卡组）⇒ 与事件页那条路一致，都有"加入卡组"的动画
+            // ① 我们的收益：给【栖途】（带引擎自己的"加入卡组"动画）
             TaskHelper.RunSafely(OrcaOrobasCardOptionPatch.OfferHomesteadReward(
-                owner, "欧洛巴斯之触（直接获得）"));
+                owner, "欧洛巴斯之触"));
+
+            // ② ★★★ 2026-10-05 用户指出的关键一步：**宣告事件结束**
+            //    「你不会忘记后面加一个宣告事件结束了吧？你不要忘记我们是拦截了整个欧洛巴斯之触的代码的」
+            //    我们 Prefix 返回 false ⇒ 引擎的 AfterObtained **整段不执行** ⇒ 它后面那条收尾也没人做
+            //    ⇒ 事件流程等不到"结束"信号 ⇒ **卡死**。
+            //    引擎自己的收尾（AncientEventModel.RelicOption 的 OnChosen 尾部）：
+            //        await RelicCmd.Obtain(relic2, base.Owner);
+            //        CustomDonePage = customDonePage2;
+            //        Done();                                   // L249 protected
+            DeclareOrobasEventFinished(owner);
 
             return false;                    // ★ 跳过原方法：不做那次 RelicCmd.Replace
         }
@@ -313,6 +332,67 @@ internal static class OrcaOrobasDirectObtainPatch
         {
             OrcaLog.Warn($"[Orca] 欧洛巴斯之触（直接获得）·拦截出错 ⇒ 放行原逻辑：{ex.Message}", 2);
             return true;
+        }
+    }
+
+    /// <summary>
+    ///     ★ 补上"宣告事件结束"这一步（用户 2026-10-05 指出）。
+    ///
+    ///     <para><b>为什么需要</b>：我们用 Prefix 返回 false **整段跳过**了引擎的
+    ///     <c>TouchOfOrobas.AfterObtained()</c>，而引擎那边的流程是：
+    ///     <code>
+    ///     // AncientEventModel.RelicOption 的 OnChosen 尾部
+    ///     await RelicCmd.Obtain(relic2, base.Owner);   // ← 内部会 await AfterObtained()，被我们跳过
+    ///     CustomDonePage = customDonePage2;
+    ///     Done();                                      // ★ 宣告事件结束（L249，protected）
+    ///     </code>
+    ///     少掉收尾 ⇒ 事件状态机等不到"结束"⇒ **卡死**。</para>
+    ///
+    ///     <para><b>为什么全程反射</b>（边界显式）：
+    ///     <list type="bullet">
+    ///       <item><c>Done()</c> 是 <c>protected</c> ⇒ 编译期调不到，只能反射；</item>
+    ///       <item>事件实例要经 <c>EventSynchronizer.GetEventForPlayer(player)</c> 取
+    ///         （L327 实据），而 <c>EventSynchronizer</c> 的持有者字段/属性名我没有编译期保证
+    ///         ⇒ 一律按名字取，**取不到就记日志、绝不静默吞掉**，也不会把流程弄崩。</item>
+    ///     </list></para>
+    ///
+    ///     <para>⚠️ 只在"确实是先古事件"时才调（<c>is AncientEventModel</c>）——
+    ///     直接获得遗物（指令）那条路**根本没有事件在跑**，此时拿不到事件实例，属正常情况、不报错。</para>
+    /// </summary>
+    private static void DeclareOrobasEventFinished(Player owner)
+    {
+        try
+        {
+            var rm = MegaCrit.Sts2.Core.Runs.RunManager.Instance;
+            if (rm == null) return;                              // 不在局内 ⇒ 无事可做，正常
+
+            var sync = AccessTools.Property(rm.GetType(), "EventSynchronizer")?.GetValue(rm)
+                       ?? AccessTools.Field(rm.GetType(), "EventSynchronizer")?.GetValue(rm);
+
+            if (sync == null) return;                            // 没有事件同步器 ⇒ 正常（指令直接获得的情形）
+
+            var ev = AccessTools.Method(sync.GetType(), "GetEventForPlayer")
+                                 ?.Invoke(sync, new object[] { owner });
+
+            if (ev is not MegaCrit.Sts2.Core.Models.AncientEventModel ancient)
+            {
+                return;                                          // 不是先古事件 ⇒ 不插手
+            }
+
+            var done = AccessTools.Method(typeof(MegaCrit.Sts2.Core.Models.AncientEventModel), "Done");
+            if (done == null)
+            {
+                OrcaLog.Warn("[Orca] 欧洛巴斯之触：找不到 AncientEventModel.Done() ⇒ 本次无法宣告事件结束", 2);
+                return;
+            }
+
+            done.Invoke(ancient, null);
+            OrcaLog.Info("[Orca] 欧洛巴斯之触：已补上事件收尾（Done()）", 2);
+        }
+        catch (Exception ex)
+        {
+            // ★ 显式记录：补收尾失败就让日志说明白，不要静默（否则又是"日志骗人"）
+            OrcaLog.Warn($"[Orca] 欧洛巴斯之触：补宣告事件结束失败（事件可能停在原地）：{ex.Message}", 2);
         }
     }
 
