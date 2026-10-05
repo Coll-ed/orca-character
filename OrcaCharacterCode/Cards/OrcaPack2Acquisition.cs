@@ -228,7 +228,14 @@ internal static class OrcaOrobasCardOptionPatch
         //   结论：**在事件回调里不能直接弹奖励界面**。想要"加入卡组的动画"，
         //   必须找引擎认可的时机（例如事件关闭之后再弹），那是另一件要单独查证的事 ——
         //   在此之前**宁可没有动画，也绝不能卡死**。
-        await OrcaPack2Acquisition.GrantToDeck(owner, ModelDb.Card<OrcaHomestead>(), reason);
+        // ★★★ 2026-10-05 用户定位到软锁根因：**「假入库」** ——
+        //     「把牌加进来了，但是卡组没有接受到这张卡牌加入卡组」「牌组已经10张牌了，加入进来牌组还是10张」
+        //     引擎那句报错早就点明了：`Canonical model of type ... used in incorrect place.`
+        //     ⇒ 传 **canonical（模板）模型** 给 CardPileCmd.Add，**静默无效**：
+        //       牌没真的进牌组，而流程还在等它落袋 ⇒ **事件卡死**。
+        //     （我们自己的日志却照打「已入牌堆」—— 那是**日志在骗人**，见 GrantToDeck 的返回值校验。）
+        //     ⇒ 必须传可变实例 `.ToMutable()`（引擎自己的惯例：Orobas.cs 就是 ModelDb.Relic<T>().ToMutable()）。
+        await OrcaPack2Acquisition.GrantToDeck(owner, ModelDb.Card<OrcaHomestead>().ToMutable(), reason);
     }
 }
 

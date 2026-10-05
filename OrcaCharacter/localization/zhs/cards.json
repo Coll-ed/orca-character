@@ -1,5 +1,5 @@
 {
-  "ORCA_BLOOD_BLADE.description": "消耗最大生命{LifePercent:diff()}%（{HpLoss:diff()}血），获得 1 层[gold]吸血[/gold]，并把这份失去的生命全额转为伤害附加（{Bonus:diff()}）。\n当被[gold]狂躁[/gold]打出时，对所有敌人造成{Bonus:diff()}点伤害；若只对一名敌人造成伤害，[gold]吸血[/gold]的倍率额外提升到{LifestealPercent:diff()}%。\n击杀敌人获得 2 点生命上限（精英 3 点 / BOSS 5 点）。",
+  "ORCA_BLOOD_BLADE.description": "{KeywordTags}\n消耗最大生命{LifePercent:diff()}%（{HpLoss:diff()}血），获得 1 层[gold]吸血[/gold]，并把这份失去的生命全额转为伤害附加（{Bonus:diff()}）。\n当被[gold]狂躁[/gold]打出时，对所有敌人造成{Bonus:diff()}点伤害；若只对一名敌人造成伤害，[gold]吸血[/gold]的倍率额外提升到{LifestealPercent:diff()}%。\n击杀敌人获得 2 点生命上限（精英 3 点 / BOSS 5 点）。",
   "ORCA_BLOOD_BLADE.title": "嗜血魔剑",
   "ORCA_BLOOD_FORGE.description": "减少当前{Percent:diff()}%总生命上限（{MaxHpLoss:diff()}血），回复等量生命。\n（先扣战斗临时上限，不够再扣原有上限。）",
   "ORCA_BLOOD_FORGE.title": "铸血",

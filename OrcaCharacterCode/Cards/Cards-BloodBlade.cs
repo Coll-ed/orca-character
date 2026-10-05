@@ -138,8 +138,11 @@ public sealed class OrcaBloodBlade : OrcaFrenzyCard
         //    ⚠️ 待办（单一来源）：这个「狂躁」目前是**字面量**。若别的狂躁卡也各拼一份，
         //    就违反"同一份数据只有一处定义"——应当抽到 OrcaKeyword 里做一个 FrenzyTag
         //    （与 EternalTag 同一套做法）。本轮先按最小改动补上可见性。
+        // ★★ 2026-10-05 顺序按用户口径调整：「魔剑的狂躁与永恒要置顶」
+        //    ⇒ 两个标签排最前，「当前战况」（OrcaSwordState.Title）排在其后。
+        //    （{KeywordTags} 在本地化文案里位于说明开头 ⇒ 谁在这个字符串里靠前，卡面上就靠前。）
         description.Add("KeywordTags",
-            $"[gold]{OrcaSwordState.Title}[/gold]。\n[gold]狂躁[/gold]。\n[gold]永恒[/gold]。");
+            $"[gold]狂躁[/gold]。\n[gold]永恒[/gold]。\n[gold]{OrcaSwordState.Title}[/gold]。");
     }
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
