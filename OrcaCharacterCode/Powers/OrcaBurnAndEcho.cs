@@ -134,7 +134,9 @@ public sealed class OrcaBurnPower : PowerModel
         // ★★ 2026-10-05 用户裁定 A4-b：来源集合＝**场上所有**（双方都算），照权威
         //    「将当前场上所有存在的【焚烧】立刻触发一次」。
         //    API 实据：ICombatState.Creatures = "Get all creatures in the combat on all sides."
-        //    ⚠️ 别把这里和下面"伤害波及谁"混起来 —— 伤害目标按权威仍是**敌人全体**（见下方 alive）。
+        //    ⚠️ 别把这里和下面"伤害波及谁"混起来 —— 这里管**谁炸开**，下面管**炸到谁**，两者规则不同：
+        //       带【生死一线】(molten) ⇒ 场上所有人（**含没带焚烧标记的敌人**）；否则 ⇒ 只有带焚烧者。
+        //       （2026-10-05 用户订正原话：「熔渊枯骨打出后，就是对没有标记的敌人也可以造成伤害」）
         List<Creature> burning = combat.Creatures
             .Where(c => !c.IsDead && (c.GetPower<OrcaBurnPower>()?.Amount ?? 0) > 0)
             .ToList();
@@ -156,6 +158,10 @@ public sealed class OrcaBurnPower : PowerModel
         //      若按"场上任意生物"取，联机里任一玩家带【生死一线】就会改写所有人的焚烧结算。
         bool molten = OrcaMoltenBonePower.IsActive(combat.PlayerCreatures.FirstOrDefault());
         if (molten) Log.Info("[Orca] 焚烧结算：【生死一线】生效 ⇒ 只消耗 50% 层数 + 波及场上所有人（含奥卡）", 2);
+
+        // ⚠️ 日志必须**如实**说明这一批"炸到谁"：molten 时打的是场上所有人（含没带焚烧的敌人），
+        //    若照旧写成"带焚烧的敌人"，实机排查会把范围误判成"只打带焚烧的"✗（本次订正的原因）
+        string scopeText = molten ? "场上所有人（含未带焚烧者）" : "带焚烧者";
 
         // ② 消耗层数（红莲淬走"无消耗"⇒ 整段跳过）
         if (consumeStacks)
@@ -182,12 +188,15 @@ public sealed class OrcaBurnPower : PowerModel
             }
         }
 
-        // ③ 每个"炸开"的敌人，伤害波及**所有带焚烧的敌人**（含自己）—— 用户口径
+        // ③ 每个"炸开"的源，按【生死一线】决定**波及谁**（两个分支见下）—— 用户口径
         foreach (var (src, stacks) in snapshot)
         {
             List<Creature> alive;
             if (molten)
             {
+                // ★★ 2026-10-05 用户订正：「熔渊枯骨打出后，就是对**没有标记的敌人**也可以造成伤害」
+                //    ⇒ 这里取**敌方全体**（**不看**有没有焚烧标记）+ 玩家侧全体 —— 不是"只打带焚烧的"。
+                //    ⚠️ 这条与上面的 A4-b 是**两件事**：A4-b 管"谁炸开"，这里管"炸到谁"。
                 // 口径："对场上所有人（包括奥卡）造成伤害" ⇒ 敌方全部存活单位 + 玩家侧全部存活单位。
                 // ★ 用 ICombatState.PlayerCreatures（实据：ilspy 反编译 sts2.dll，
                 //   ICombatState 属性 "Get all the player creatures in the combat."）
@@ -199,6 +208,8 @@ public sealed class OrcaBurnPower : PowerModel
             }
             else
             {
+                // 没打熔渊枯骨 ⇒ 照卡面文案（powers.json 的 ORCA_BURN_POWER.description：
+                // 「对每个带焚烧的敌人造成（层数）点伤害」）⇒ **只打带焚烧的**。
                 alive = snapshot.Select(t => t.Target).Where(c => !c.IsDead).ToList();
             }
             if (alive.Count == 0)
@@ -212,7 +223,8 @@ public sealed class OrcaBurnPower : PowerModel
                 //   ⇒ 后面的焚烧**不再结算**＝正是那句"少算一轮" ✗
                 //   （同一行原本的注释就已写着"改为 continue"，代码与注释不符 ⇒ 现按注释与权威改回）
                 //   continue：只跳过**本次已死**的目标，其余照常结算 ✓
-                //   ⚠️ 与前一行"只波及带焚烧者"的范围口径**不冲突**：那管"打谁"，这里管"不因死亡漏算"。
+                //   ⚠️ 与上面"波及谁"的范围口径**不冲突**：那管"打谁"（molten 时是场上所有人，
+                //      含没带焚烧的敌人），这里管"不因死亡漏算"。
                 continue;
             }
 
@@ -239,7 +251,7 @@ public sealed class OrcaBurnPower : PowerModel
                 OrcaDeathQuotes.EndBurnDamage();
             }
 
-            Log.Info($"[Orca] 焚烧结算（{why}）：{src.Name} 的 {stacks} 层炸开 → 波及 {alive.Count} 个带焚烧的敌人", 2);
+            Log.Info($"[Orca] 焚烧结算（{why}）：{src.Name} 的 {stacks} 层炸开 → 波及 {alive.Count} 个{scopeText}", 2);
         }
     }
 }
