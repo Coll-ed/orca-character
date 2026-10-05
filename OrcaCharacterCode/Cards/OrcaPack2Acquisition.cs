@@ -86,44 +86,84 @@ internal static class OrcaPack2Acquisition
 }
 
 /// <summary>
-///     ★ **栖途的获取途径** —— 拾取先古遗物「欧洛巴斯之触」（<see cref="TouchOfOrobas" />）时一并获得。
+///     ★★★ **把先古事件里那个「欧洛巴斯之触」遗物格，换成给【栖途】的卡牌选项**
+///     （用户口径 2026-10-05：<i>"我确定是战后奖励这种"</i> + <i>"一个遗物格 → 换成卡牌格"</i>）。
 ///
-///     <para>反编译实据（<c>TouchOfOrobas</c>）：它的 <c>AfterObtained</c> 只做一件事 ——
-///     把玩家的**起始遗物升级**（<c>RefinementUpgrades</c> 映射表里只有 5 个原版角色的起始遗物，
-///     **没有奥卡** ⇒ 奥卡会拿到 <c>Circlet</c> 兜底）。我们不去动那个表（那是它自己的设计），
-///     只在其后**追加**栖途。</para>
+///     <para><b>链条（逐环有反编译实据；全量导出 3538 个 .cs 后搜 <c>TouchOfOrobas</c> 定位到）</b>：
+///     先古事件发生在**打完 Boss 之后** ⇒ 它的选项页就是用户说的"战后奖励界面"：
+///     <code>
+///     // MegaCrit.Sts2.Core.Models.Events\Orobas.cs:59-94
+///     private IEnumerable&lt;EventOption&gt; OptionPool3 {
+///         TouchOfOrobas touchOfOrobas = (TouchOfOrobas)ModelDb.Relic&lt;TouchOfOrobas&gt;().ToMutable();
+///         if (touchOfOrobas.SetupForPlayer(base.Owner))
+///             list.Add(RelicOption(touchOfOrobas));      // ← ★ 那个"遗物格"
+///         ArchaicTooth archaicTooth = ...;               // 古老牙齿在同一池（必须保留不动）
+///     }
+///     </code></para>
 ///
-///     <para>⚠️ <c>RelicModel.Owner</c> 在不同的模型上可访问性不一致（有的是 protected）
-///     ⇒ 这里用反射读，避免编译期访问限制。</para>
+///     <para><b>为什么这样换可行</b>（<c>EventOption</c> 实据）：
+///     <list type="bullet">
+///       <item><c>public RelicModel? Relic { get; private set; }</c> —— 有遗物才渲染成"遗物格"；
+///         用**不带遗物**的构造函数建的选项是普通文字选项（标题 + 描述）；</item>
+///       <item><c>EventOption(EventModel, Func&lt;Task&gt;? onChosen, LocString title, LocString description, string textKey, …)</c>
+///         —— 标题/描述可自带、回调随便给 ⇒ 在 <c>onChosen</c> 里把栖途加进卡组即可。</item>
+///     </list></para>
+///
+///     <para>⚠️ <b>取舍要说清楚</b>：事件选项**没有"卡牌格"这种渲染**（<c>EventOption</c> 只有
+///     <c>Relic</c> 一个图形位，没有 <c>Card</c>）⇒ 换出来的是**文字选项**（标题「栖途」+ 说明），
+///     不是卡面缩略图。与"卡牌奖励"一致的实质是：**玩家点它才拿到牌**（而非上一版那样默默塞进卡组）。</para>
+///
+///     <para>⚠️ 只动**欧洛巴斯之触**那一项：<c>ArchaicTooth</c>（古老牙齿，龙剑→魔剑的升级来源）
+///     与其它选项一律原样保留 —— 用 <c>Relic is TouchOfOrobas</c> 精确匹配，不做任何"按位置删"。</para>
 /// </summary>
-[HarmonyPatch(typeof(TouchOfOrobas), "AfterObtained")]
-internal static class OrcaOrobasTouchPatch
+[HarmonyPatch(typeof(MegaCrit.Sts2.Core.Models.Events.Orobas), "get_OptionPool3")]
+internal static class OrcaOrobasCardOptionPatch
 {
-    private static void Postfix(TouchOfOrobas __instance)
+    /// <summary>卡牌选项的标题键（在本模组 <c>cards.json</c> 里，单一来源）。</summary>
+    private const string OptionTitleKey = "ORCA_HOMESTEAD.event.title";
+
+    /// <summary>卡牌选项的描述键（同上）。</summary>
+    private const string OptionDescriptionKey = "ORCA_HOMESTEAD.event.description";
+
+    /// <summary>本地化文件名（<c>new LocString(文件, 键)</c> 的第一个参数）。</summary>
+    private const string LocFile = "cards";
+
+    private static void Postfix(MegaCrit.Sts2.Core.Models.Events.Orobas __instance,
+                                ref IEnumerable<MegaCrit.Sts2.Core.Events.EventOption> __result)
     {
         try
         {
-            var owner = OwnerOf(__instance);
-            TaskHelper.RunSafely(OrcaPack2Acquisition.GrantToDeck(owner, ModelDb.Card<OrcaHomestead>(), "欧洛巴斯之触"));
+            if (__result == null) return;
+
+            var list = new List<MegaCrit.Sts2.Core.Events.EventOption>(__result);
+            var removed = list.RemoveAll(o => o?.Relic is TouchOfOrobas);
+            if (removed == 0) return;         // 本次没提供那个遗物（例如玩家没有起始遗物）⇒ 一律不动
+
+            var card = ModelDb.Card<OrcaHomestead>();
+            list.Add(new MegaCrit.Sts2.Core.Events.EventOption(
+                __instance,
+                async () =>
+                {
+                    var owner = __instance.Owner;
+                    if (owner == null)
+                    {
+                        OrcaLog.Warn("[Orca] 欧洛巴斯·栖途选项：拿不到 Owner ⇒ 本次没给牌", 2);
+                        return;
+                    }
+                    await OrcaPack2Acquisition.GrantToDeck(owner, card, "欧洛巴斯之触（卡牌选项）");
+                },
+                new MegaCrit.Sts2.Core.Localization.LocString(LocFile, OptionTitleKey),
+                new MegaCrit.Sts2.Core.Localization.LocString(LocFile, OptionDescriptionKey),
+                OptionTitleKey,
+                Array.Empty<MegaCrit.Sts2.Core.HoverTips.IHoverTip>()));
+
+            __result = list;
+            OrcaLog.Info($"[Orca] 欧洛巴斯之触：遗物格已换成卡牌选项（现有 {list.Count} 个选项，古老牙齿未动）", 2);
         }
         catch (Exception ex)
         {
-            OrcaLog.Warn($"[Orca] 欧洛巴斯之触·给栖途失败：{ex.Message}", 2);
-        }
-    }
-
-    /// <summary>反射读 <c>Owner</c>（Player），拿不到就返回 null。</summary>
-    private static Player? OwnerOf(object relic)
-    {
-        try
-        {
-            var pi = AccessTools.Property(relic.GetType(), "Owner")
-                     ?? AccessTools.Property(typeof(RelicModel), "Owner");
-            return pi?.GetValue(relic) as Player;
-        }
-        catch
-        {
-            return null;
+            // ★ 出错就不改（__result 保持原样）：宁可让人拿到头环，也不能把事件页弄坏
+            OrcaLog.Warn($"[Orca] 欧洛巴斯之触·换卡牌选项出错（保持原样）：{ex.Message}", 2);
         }
     }
 }

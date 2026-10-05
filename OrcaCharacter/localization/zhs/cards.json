@@ -38,6 +38,8 @@
   "ORCA_FRENZY_SLASH.description": "将当前手牌中的攻击牌消耗，打出你所携带的那把剑。",
   "ORCA_FRENZY_SLASH.title": "狂热斩击",
   "ORCA_HOMESTEAD.description": "战斗结束后，将你 {Percent:diff()}% 的战斗临时生命上限转化为真实生命上限。",
+  "ORCA_HOMESTEAD.event.title": "栖途",
+  "ORCA_HOMESTEAD.event.description": "获得【栖途】（先古牌）。",
   "ORCA_HOMESTEAD.line": "[sine]总要有个落脚的地方。[/sine]",
   "ORCA_HOMESTEAD.title": "栖途",
   "ORCA_MELT_BLOOD.description": "消耗一张卡牌，获得 2 点能量。",
