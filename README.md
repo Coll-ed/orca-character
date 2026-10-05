@@ -21,7 +21,7 @@
 ## 二、安装
 
 1. 在创意工坊**订阅 BaseLib**。
-2. 到本仓库的 [Releases](../../releases) 下载 **`银龙奥卡-v0.1-运行包.zip`**。
+2. 到本仓库的 [Releases](../../releases) 下载 **`OrcaCharacter-v0.1.zip`**（运行包）。
 3. 解压到游戏的 `mods\` 目录下，最终结构应形如：
 
    ```
