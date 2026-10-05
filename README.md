@@ -1,71 +1,94 @@
 # 银龙奥卡 · Slay the Spire 2 角色 mod
 
-把「银龙奥卡」做成《杀戮尖塔2》里独立可选的角色。
+> **V0.1** ｜ 把「银龙奥卡」加入《杀戮尖塔2》作为**独立可选角色**。
+> 一位用剑与血换力量的银龙少女：**卖血、焚烧、吸血、把临时生命上限铸成真实上限**。
 
 ---
 
-## 一、这是什么 / 不是什么（重要边界）
+## 一、前置依赖（**必装**）
 
-「银龙奥卡」在游戏里由**三个模组**共同构成，本仓库只是其中之一：
-
-| 模组 | 提供 | 本仓库 |
+| 前置 | 版本 | 说明 |
 |---|---|---|
-| **本仓库** `OrcaCharacter` | 角色逻辑：卡牌 / 能力 / 遗物 / 关键词 / 纪元 / 音效挂点 | ✅ 就是它 |
-| `奥卡卡图`（`战士卡图mod1.1`） | 卡牌立绘等美术资源 | ❌ **不属于本工程，不读不改不复制** |
-| `奥卡皮肤-Orca` | 角色皮肤：`animations/`、`materials/`、`CharacterSkinManager` | ❌ **不属于本工程，不读不改不复制** |
+| **BaseLib** | ≥ `v3.4.7` | **必需**。Steam 创意工坊订阅即可。缺失或版本过低时本模组不会加载。 |
 
-因此代码里的 `res://images/...`、`res://animations/...`、`res://materials/...` 这类路径
-**由上面两个美术模组提供**，本仓库的 `.pck` 只负责自己的 `res://OrcaCharacter/localization/...`。
-**修改本工程时不要往 `images/ animations/ materials/ shaders/` 里放东西** —— 那是在越界改别人的资源。
+**除 BaseLib 外不需要任何其它模组** —— 本模组自带角色立绘、26 张卡图、两套皮肤动画、
+能力图标、音效与全部本地化文本。
 
----
-
-## 二、目录结构
-
-```
-OrcaCharacter.csproj        ← Godot.NET.Sdk；MSBuild 入口
-OrcaCharacter.sln
-Directory.Build.props       ← 工程常量（模组目录名、Godot 路径来源）
-Sts2PathDiscovery.props     ← 游戏安装位置自动发现（注册表 / Steam），零绝对路径
-local.props.example         ← 本机覆盖模板（local.props 已 gitignore）
-OrcaCharacter.json          ← 模组清单（mod id / 依赖 BaseLib / has_pck / has_dll）
-project.godot               ← Godot 工程文件（只为导出 .pck 而存在）
-export_presets.cfg          ← Godot 导出预设 "BasicExport"
-.gitignore
-
-OrcaCharacterCode/          ← 全部 C# 源码，按功能分目录
-├── Core/        角色本体、启动、配置、日志、卡牌基类、关键词、卡池
-├── Cards/       卡牌定义
-├── Powers/      能力（Power）模型
-├── Patches/     Harmony 补丁
-├── Epochs/      纪元
-├── UI/          图标、能量珠、卡面 UI、皮肤挂点
-├── Relics/      遗物
-├── Audio/       音频与台词
-└── _空文件/     0 字节残留文件（隔离保留，待确认后删除）
-
-OrcaCharacter/              ← Godot 资源根 = res://
-└── localization/zhs/*.json
-
-docs/
-├── 官方wiki-modding/       ← 官方 modding wiki 摘录
-└── 参考-好工程-StS2-NotEnoughDifficulty/   ← 工程约定的参照标准（见 §五）
-```
+其他要求：**游戏版本 ≥ 0.111.0**（见 `OrcaCharacter.json` 的 `min_game_version`）。
 
 ---
 
-## 三、构建与部署（一条链，改的就是跑的）
+## 二、安装
+
+1. 在创意工坊**订阅 BaseLib**。
+2. 到本仓库的 [Releases](../../releases) 下载 **`银龙奥卡-v0.1-运行包.zip`**。
+3. 解压到游戏的 `mods\` 目录下，最终结构应形如：
+
+   ```
+   <游戏目录>\mods\奥卡角色-Orca\
+   ├── OrcaCharacter.dll     ← 角色逻辑
+   ├── OrcaCharacter.pck     ← 资源包（卡图 / 动画 / 音效 / 本地化）
+   └── OrcaCharacter.json    ← 模组清单
+   ```
+
+   > 文件夹名可以不同，但三个文件必须在**同一个** `mods\` 的直接子目录里。
+
+4. 启动游戏 → 角色选择界面出现「**银龙奥卡**」。
+
+**卸载**：删掉上面那个目录即可。
+
+---
+
+## 三、这个角色有什么
+
+| 项 | 内容 |
+|---|---|
+| 生命上限 | **60** |
+| 起始遗物 | **银龙血统** |
+| 起始卡组 | 打击 · 防御 · 龙族魔典 · 嗜血龙剑 |
+| 内容量 | **26 张卡牌** · **14 个能力** · **14 个关键词** · **7 个纪元** |
+| 皮肤 | **板甲** · **婚纱**（两套战斗 / 选人 / 商店 / 火堆动画） |
+
+### 核心机制
+
+- **【银龙血统】** 每受到一次伤害，本场战斗内**临时获得**相当于该伤害 50% 的**生命上限**（不回复生命）。
+  每回合开始回复最大生命值 2%；若上回合**未被敌人攻击**则再回复一次（合计 4%）。自己卖血失去生命**不影响**这条翻倍。
+- **【焚烧】** 敌方回合结束时按层数炸开，波及**带焚烧的敌人**；
+  打出【生死一线】（熔渊枯骨）后改为**波及场上所有人（含奥卡自己）**，且每次只消耗一半层数。
+- **【吸血】** 打出攻击牌造成未被格挡的伤害时回血：龙剑类型（嗜血龙剑 / 嗜血魔剑）按伤害的 50%×层数一口气结清；
+  其它攻击牌按伤害的 25% 折算、不消耗层数。
+- **【狂躁】** 龙剑 / 魔剑被狂躁打出时，对**所有敌人**造成伤害。
+- **【翱翔】** 奥卡受到的单次伤害减半，按层数消耗。
+- **临时生命上限**是这套角色的账本核心：血统给的临时上限在战斗结束时结算，
+  【栖途】可以把其中一部分**转化为真实（永久）生命上限**。
+
+> 完整卡牌 / 能力文案见游戏内，或 `OrcaCharacter/localization/zhs/`。
+
+---
+
+## 四、V0.1 更新概要
+
+首个公开版本，包含此前全部修复。本轮（2026-10-05）落地的重点：
+
+- **修复**「临时生命上限」账本族缺陷三处：栖途抬基准、龙剑数值去重、
+  以及**跨局泄漏**（上一局敲过栖途，下一局开局就按敲后比例结算 ✗ → 已改为按本局卡牌状态现推）。
+- **修复**归墟 buff 浮窗硬写 50%（覆盖 `PowerModel.Description` 注入实际比例；卡面与浮窗同源）。
+- **修复**焚烧烤开在【生死一线】下的范围：**对没有焚烧标记的敌人也会造成伤害**（并按此订正日志，便于排查）。
+- **修复**击杀奖励被战斗收尾覆盖、欧洛巴斯之触事件软锁、飞火披肩比例、面板夹屏等一批实机问题。
+- **新增**「**特殊死亡台词**」：与敌人被同一次焚烧一起烧死时，游戏结束画面显示专属文案
+  （默认 `银龙奥卡与{enemies}一同被火焰烧成了灰烬`，可在模组设置里改成你自己的、多条随机抽）。
+
+---
+
+## 五、从源码构建（开发者）
 
 ```powershell
-dotnet build          # 编译 → 自动把 dll / json / pdb 复制进 mods 目录
-dotnet publish        # 上面 + 用 Godot 导出 .pck（需要 GodotPath）
+dotnet build      # 编译 → 自动把 dll / json / pdb 复制进 mods 目录
+dotnet publish    # 上面 + 重建 .pck（资源包）
 ```
 
 `OrcaCharacter.csproj` 里的 `CopyToModsFolderOnBuild` / `GodotPublish` 两个 Target
 保证**游戏目录里的构件一定是源码编出来的那一份**，不存在手工拷贝导致的漂移。
-
-**这条链是硬要求，不是便利设施。** 本工程此前长期存在「改了源码、游戏里跑的却是旧构件」
-的问题，排查任何行为差异前，先确认部署态与源码一致。
 
 ### 依赖与路径
 
@@ -78,48 +101,27 @@ dotnet publish        # 上面 + 用 Godot 导出 .pck（需要 GodotPath）
 
 **任何文件里都不应出现本机绝对路径。** 需要覆盖时复制 `local.props.example` 为 `local.props`。
 
----
+### 打包与自检
 
-## 四、当前状态 / 已知缺口（不粉饰）
-
-本仓库**即工程本体**，不依赖任何反编译/恢复阶段的外部产物：`dotnet build` 即可从本目录
-编出可部署的构件。
-
-| 项 | 状态 |
-|---|---|
-| `OrcaCharacterCode/Cards/Cards.cs` | ✅ **已解决**（2026-10-05 核实）：该残件已移除，其内容各有完整归属（`OrcaBloodSword` → `OrcaFrenzyCard` 体系、`FrenzyStrike` → `Cards-BloodBlade.cs`） |
-| `OrcaCharacterCode/_空文件/` | ✅ **已清空**（2026-10-05 核实：目录已无文件） |
-| 本地化 | `OrcaCharacter/localization/zhs/` 部分文件内容少于游戏内实际版本，待整理 |
-| 待验证改动 | 源码中残留 `TOGGLE-OFF-A2/A3/A4/A5/A7` 开关（实测 5 处），对应的修复**尚未逐项实机验证** |
-| `.pck` | ✅ **已解决**（2026-10-05）：本机 Godot/MegaDot **在位**，且打包已改走 `tools/build-pck.py`（不再依赖 Godot 导出）⇒ `dotnet publish` 一条命令即可重建完整 `.pck`（334 条目 / 58,158,427 B） |
-| `LICENSE` | 尚未选定 |
+`.pck` 由 `tools/build-pck.py` 自建（不依赖 Godot 导出，避免官方导出静默丢资源），
+`dotnet publish` 会自动跑它并做**双门槛校验**（体积 ≥ 20 MB、条目数 ≥ 300）。
+另有 `tools/check-placeholders.py` 检查卡面占位符是否有注入点。
 
 ---
 
-## 五、工程约定
-
-骨架（`.sln` / 根 `csproj` / `Sts2PathDiscovery.props` / Godot 导出 Target / 目录分法）
-参照 `Coll-ed/StS2-NotEnoughDifficulty`（公开仓库，MIT）。副本见
-`docs/参考-好工程-StS2-NotEnoughDifficulty/`，仅作阅读，不参与编译。
+## 六、工程约定
 
 ### ★ 同源重建（硬规矩）
 
-**`dll` 与 `pck` 必须来自同一棵源码树的同一次重建。**
-
-两者是同一工程编出的两个独立产物：`pck` 由 Godot 导出（装资源），`dll` 由 MSBuild 编出（装代码）。
-因此它们**不是同一条编译输出** —— 混用不会当场报错，但会让**任何行为差异都无法归因**。
-
-本工程曾长期踩这个坑：同一份 `OrcaCharacter/localization/zhs/cards.json` 同时存在三个版本
-（官方 `pck` 里 6189 字节 / 中途重打包的 6288 / 仓库 `assets/` 里 6293），
-导致「改了 X 所以 Y 变了」这类推理全部建立在乱账上。
-
-**操作要求：**
+**`dll` 与 `pck` 必须来自同一棵源码树的同一次重建。** 两者是同一工程编出的两个独立产物
+（`pck` 装资源、`dll` 装代码），混用不会当场报错，但会让**任何行为差异都无法归因**。
 
 ```powershell
 dotnet publish      # 一次把 dll 与 pck 都重建到 mods 目录，不要手工替换其中一个
 ```
 
-需要单独改动某一边时，**必须先确认另一边的产物也来自当前源码**，否则这次改动的结果不可采信。
+历史上本工程踩过这个坑：同一份 `cards.json` 同时存在三个版本，
+导致「改了 X 所以 Y 变了」这类推理全部建立在乱账上。
 
 ### 其他纪律
 
@@ -127,49 +129,57 @@ dotnet publish      # 一次把 dll 与 pck 都重建到 mods 目录，不要手
 
 ### Godot 版本约束
 
-游戏内置 MegaDot **4.5.1**。**用更新版本 Godot 导出的 `.pck` 游戏不加载** ——
-所以 `OrcaCharacter.csproj` 固定 `Sdk="Godot.NET.Sdk/4.5.1"`，导出也须用 Godot 4.5.1 mono。
-
-`.godot/imported/` 与 `.godot/exported/` **必须入库**：`.pck` 里就包含这些导入产物，
-不提交它们就无法在没有 Godot 的机器上复现打包。`.gitignore` 因此只忽略 `.godot/mono/`（编译产物）。
+游戏内置 MegaDot **4.5.1**；用更新版本 Godot 导出的 `.pck` 游戏**不加载**，
+故 `OrcaCharacter.csproj` 固定 `Sdk="Godot.NET.Sdk/4.5.1"`。
+`.godot/imported/`、`.godot/exported/` **必须入库**（`.pck` 里含这些导入产物，
+不提交就无法在没装 Godot 的机器上复现打包），`.gitignore` 因此只忽略 `.godot/mono/`。
 
 ---
 
-## 六、待查问题：一打出卡牌就卡死
-
-> 保留此节供排查参考。**注意：此前的二分表是在「源码与部署不一致」的前提下做的，
-> 结论需重新验证。**
-
-### 现象
-
-- **过回合完全正常** ✓（回合开始补能量、外框特效、敌方回合都正常）
-- **一「打出卡牌」就卡死** ✗ —— 画面冻住、**进程还在**（Godot 主线程死锁形态）
-- **无异常、无堆栈、无弹窗**；百科大全正常 ✓
-- **打任何一张牌都会**（含最基础的「打击」），**冻在 `OnPlay` 之后**（`OnPlay` 内日志全部打出）
-- 正常退出有 `resources still in use at exit`；卡死时**没有**这一行
-
-### 日志特征
+## 七、仓库结构
 
 ```
-[INFO] Player 1 playing card ORCA_STRIKE (targeting …)
-[INFO] [Orca] 打出 ORCA_STRIKE（手动）→ 目标=…，当前能量=2
-[INFO] [Orca] 打击效果：对 … 造成 6 点伤害
-[MeleeDebug][AnimPatch] …（攻击动画走原版 ✓）
-[FastWait] … → 原版放行
-（此后无任何输出 ⇒ 冻住）
+OrcaCharacter.csproj / .sln        ← MSBuild 入口
+Directory.Build.props              ← 工程常量
+Sts2PathDiscovery.props            ← 游戏安装位置自动发现（零绝对路径）
+local.props.example                ← 本机覆盖模板（local.props 已 gitignore）
+OrcaCharacter.json                 ← 模组清单（mod id / 依赖 BaseLib / 版本）
+
+OrcaCharacterCode/                 ← 全部 C# 源码（69 个文件）
+├── Core/        角色本体、启动、配置、日志、卡牌基类、关键词、卡池
+├── Cards/       卡牌定义          ├── Powers/     能力（Power）模型
+├── Patches/     Harmony 补丁      ├── Epochs/     纪元
+├── UI/          图标、能量珠、卡面 UI、皮肤挂点
+├── Relics/      遗物              └── Audio/      音频与台词
+
+OrcaCharacter/                     ← Godot 资源根 = res://
+├── localization/zhs/*.json        ← 本地化（卡牌 / 能力 / 遗物 / 关键词 / 设置界面）
+└── audio/*.tres
+
+images/ animations/ materials/ scenes/ skins/   ← 本模组自己的美术资源（打 .pck 用）
+.godot/imported/ .godot/exported/               ← Godot 导入产物（必须入库，见上）
+tools/                             ← 打包与自检脚本（Python）
+docs/                              ← 工程文档与踩坑记录
 ```
 
-### 已排除
+> `images/`、`animations/` 等目录是**本模组打包 `.pck` 所需的资源**，请只增删本模组自己的资源。
 
-最纯净环境（移除其它 mod）仍卡死 ⇒ 非 mod 冲突；修 `No suitable Formatter`（SmartFormat 报错
-2 次 → 0 次）后仍卡死；`TweenProperty` 起点 `Nil` 的 `Type mismatch` 每回合都报但过回合不冻
-⇒ 大概率只是噪声；`Orca : CharacterModel` → `CustomCharacterModel` 后仍卡死（且引入角色选择
-界面多出皮肤项的副作用）。
+---
 
-### 希望得到的帮助
+## 八、反馈与已知情况
 
-1. 「打出卡牌」链路（`OnPlay` → 结算 → `AfterCardPlayed` → 卡牌移动/消耗 → UI 刷新）里，
-   哪些环节可能造成 Godot 主线程静默死锁？
-2. 有没有已知的「自定义卡 + Harmony patch」在出牌路径上造成死锁的模式？
-3. 有没有办法让这种冻结留下痕迹？（关键路径加日志无效，冻结点在日志之外）
-4. 是否与 `CardPileCmd` / `CardSelectCmd` / `AfterCardPlayed` 这类异步钩子有关？
+- **反馈**：提 [Issue](../../issues) 或到创意工坊页面留言。
+- **日志**：出问题时请附游戏目录下的 `godot.log`（模组日志带 `[Orca]` 前缀，
+  设置界面可打开「输出详细日志」）。
+- **已知情况**：
+  - 特殊死亡台词、归墟 buff 浮窗比例等属于 V0.1 新改动，欢迎实机反馈。
+  - 帧率敏感场景（大量敌人 + 多层焚烧）仍在观察。
+
+---
+
+## 九、许可与致谢
+
+- **代码**：本仓库暂未附开源许可，转载 / 二次分发请先联系作者。
+- **美术资源**：版权归原作者，随本模组一起分发仅用于游戏内运行。
+- **致谢**：[BaseLib](https://steamcommunity.com/sharedfiles/filedetails/?id=3737335127)（前置依赖）；
+  工程骨架参照 `Coll-ed/StS2-NotEnoughDifficulty`（MIT），副本见 `docs/参考-好工程-StS2-NotEnoughDifficulty/`。
