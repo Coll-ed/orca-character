@@ -189,7 +189,11 @@ internal static class OrcaOrobasCardOptionPatch
     {
         try
         {
-            var card = ModelDb.Card<OrcaHomestead>();
+            // ★★ 必须传**可变实例**（`.ToMutable()`）：canonical（模板）模型不能用在奖励里 ——
+            //    实机日志实锤：`Canonical model of type OrcaCharacter.OrcaHomestead used in incorrect place.`
+            //    这也正是"没有加入卡组动画"的根因：奖励流程被引擎拒绝 ⇒ 退回直接进卡组 ⇒ 没有界面/动画。
+            //    引擎自己的惯例同此：Orobas.cs 里就是 ModelDb.Relic<TouchOfOrobas>().ToMutable()。
+            var card = ModelDb.Card<OrcaHomestead>().ToMutable();
             var rewards = new List<MegaCrit.Sts2.Core.Rewards.Reward>
             {
                 new MegaCrit.Sts2.Core.Rewards.SpecialCardReward(card, owner),

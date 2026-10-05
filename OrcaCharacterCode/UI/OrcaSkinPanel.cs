@@ -208,7 +208,21 @@ internal static class OrcaSkinPanel
     /// </summary>
     private static void EnsurePreview()
     {
-        if (_previewSpine != null || _previewBox == null) return;
+        // ★★ 2026-10-05 修「小人偶尔会不见」（用户实测 + 日志）：
+        //    日志里"皮肤预览小人已建立 / 已套 plate（idle_loop）"都是**成功**的、没有任何报错
+        //    ⇒ 问题不在建立，而在**旧节点已被 Godot 释放、静态引用却还指着它**：
+        //    老写法只判 `_previewSpine != null` ⇒ 释放后引用仍非空 ⇒ 永远提前 return、再也不重建 ⇒ 小人消失。
+        //    所以守卫必须判**有效性/是否还在树上**，失效就把引用清掉、走重建。
+        if (_previewSpine != null && (!GodotObject.IsInstanceValid(_previewSpine) || !_previewSpine.IsInsideTree()))
+        {
+            OrcaLog.Info("[Orca] 皮肤预览：旧小人不在了（已释放/已离树）⇒ 重建", 2);
+            _previewSpine = null;
+            _previewAnimStarted = false;
+            _previewSkinTag = string.Empty;
+        }
+
+        if (_previewBox == null || !GodotObject.IsInstanceValid(_previewBox)) return;
+        if (_previewSpine != null) return;
 
         try
         {
