@@ -127,8 +127,29 @@ public sealed class OrcaBloodSword : OrcaFrenzyCard
     /// <summary>描述里的数值全部由 <see cref="AddExtraArgsToDescription" /> 注入（本牌无 CanonicalVars）。</summary>
     protected override IEnumerable<DynamicVar> CanonicalVars => Array.Empty<DynamicVar>();
 
-    /// <summary>永恒：不能被移除/变形。</summary>
-    public override IEnumerable<CardKeyword> CanonicalKeywords => new[] { CardKeyword.Eternal };
+    /// <summary>
+    ///     关键词：**空**（原来这里是「永恒」<c>CardKeyword.Eternal</c>，2026-10-05 撤掉）。
+    ///
+    ///     <para>★★ <b>为什么必须撤</b>（引擎实据 + 实机日志）：
+    ///     <code>
+    ///     CardModel:              IsRemovable     =&gt; !Keywords.Contains(CardKeyword.Eternal);
+    ///     CardTransformation:     if (!card.IsTransformable) throw new InvalidOperationException(
+    ///                                 "Non-removable cards cannot be transformed!");
+    ///     ArchaicTooth:           await CardCmd.Transform(起始卡, 先古牌);      // 古老牙齿的唯一动作
+    ///     </code>
+    ///     实机日志：<c>[ERROR] System.InvalidOperationException: Non-removable cards cannot be transformed!
+    ///     at ... ArchaicTooth.AfterObtained()</c>
+    ///     ⇒ 龙剑挂了「永恒」⇒ 不可移除 ⇒ **不可转换** ⇒ 古老牙齿**必抛异常**；
+    ///     异常让整个事件流程中断 ⇒ **事件页卡死（实测软锁）**。</para>
+    ///
+    ///     <para>⇒ 也就是说：这条「龙剑 → 魔剑」的升级链路**从来没成功过**
+    ///     （不是欧洛巴斯那条线的问题，与它无关）。</para>
+    ///
+    ///     <para>⚠️ <b>代价（需用户确认）</b>：龙剑从此**可以从卡组移除**（例如商店删牌）。
+    ///     这是引擎的硬规则 —— 想被古老牙齿转换，就必须可移除，**两者不可兼得**。
+    ///     若坚持要"永恒"，则必须放弃古老牙齿升级，二选一。</para>
+    /// </summary>
+    public override IEnumerable<CardKeyword> CanonicalKeywords => Array.Empty<CardKeyword>();
 
     /// <summary>累积伤害附加（血焰剑鞘 / 其它牌给它加值）。</summary>
     internal void AddBonus(int amount)
