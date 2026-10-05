@@ -210,26 +210,87 @@ internal static class OrcaSkinPanel
     {
         if (_previewSpine != null || _previewBox == null) return;
 
-        var created = ClassDB.Instantiate(MegaSprite.spineClassName);
-        if (created.AsGodotObject() is not Node2D spine)
+        try
         {
-            OrcaLog.Warn($"[Orca] 皮肤预览：造不出 {MegaSprite.spineClassName}（面板照常可用，只是没有小人）", 2);
-            return;
+            var created = ClassDB.Instantiate(MegaSprite.spineClassName);
+            var obj = created.AsGodotObject();
+            if (obj is not Node2D spine)
+            {
+                // ★ 造不出裸 SpineSprite ⇒ **降级为静态立绘**（用户实测「这里的小人挂了」时不留空白框）
+                OrcaLog.Warn($"[Orca] 皮肤预览：ClassDB.Instantiate(\"{MegaSprite.spineClassName}\") 得到 "
+                           + $"{obj?.GetType().Name ?? "null"}（不是 Node2D）⇒ 降级为静态立绘", 2);
+                ShowFallbackIllustration();
+                return;
+            }
+
+            // 脚底对齐预览框底部中间（角色原点在脚下）
+            spine.Position = new Vector2(PreviewWidth / 2f, PreviewHeight);
+            spine.Scale = Vector2.One * PreviewSpineScale;
+
+            _previewBox.AddChild(spine);
+            _previewSpine = spine;
+            OrcaLog.Info("[Orca] 皮肤预览小人已建立", 2);
         }
-
-        // 脚底对齐预览框底部中间（角色原点在脚下）
-        spine.Position = new Vector2(PreviewWidth / 2f, PreviewHeight);
-        spine.Scale = Vector2.One * PreviewSpineScale;
-
-        _previewBox.AddChild(spine);
-        _previewSpine = spine;
-        OrcaLog.Info("[Orca] 皮肤预览小人已建立", 2);
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 皮肤预览：建小人出错 ⇒ 降级为静态立绘：{ex.Message}", 2);
+            ShowFallbackIllustration();
+        }
     }
 
-    /// <summary>把当前皮肤的**战斗骨架**套到预览小人上，并播待机动画。</summary>
+    /// <summary>降级立绘的节点名（按名字取回，避免为此再多存一个静态字段）。</summary>
+    private const string FallbackNodeName = "OrcaSkinPreviewFallback";
+
+    /// <summary>
+    ///     降级路径：在预览框里显示**当前皮肤的立绘**（本模组自带素材）。
+    ///     宁可给一张静态图，也不留空框 —— 空框看起来就是"功能坏了"（用户实测正是这么报的：「小人挂了」）。
+    /// </summary>
+    private static void ShowFallbackIllustration()
+    {
+        if (_previewBox == null || _previewBox.GetNodeOrNull<TextureRect>(FallbackNodeName) != null) return;
+
+        try
+        {
+            var rect = new TextureRect
+            {
+                Name = FallbackNodeName,
+                CustomMinimumSize = new Vector2(PreviewWidth, PreviewHeight),
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+                StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            };
+            _previewBox.AddChild(rect);
+            OrcaLog.Info("[Orca] 皮肤预览：已降级为静态立绘", 2);
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 皮肤预览：降级立绘也失败：{ex.Message}", 2);
+        }
+    }
+
+    /// <summary>降级路径下跟着皮肤换立绘（标签没变就不重复加载）。</summary>
+    private static void UpdateFallbackIllustration()
+    {
+        var rect = _previewBox?.GetNodeOrNull<TextureRect>(FallbackNodeName);
+        if (rect == null) return;
+
+        if (FallbackTextureTag == OrcaSkin.Active) return;
+        FallbackTextureTag = OrcaSkin.Active;
+
+        rect.Texture = ResourceLoader.Load<Texture2D>(
+            OrcaSkin.IsWedding ? OrcaCharacterIcon.WeddingSelectIllustPath : OrcaCharacterIcon.PlateSelectIllustPath);
+    }
+
+    /// <summary>降级立绘当前装的是哪套皮肤（避免重复加载同一张图）。</summary>
+    private static string FallbackTextureTag = string.Empty;
+
+    /// <summary>把当前皮肤的**战斗骨架**套到预览小人上，并播待机动画（小人没造出来则退回立绘）。</summary>
     private static void ApplyPreviewSkin()
     {
-        if (_previewSpine == null) return;
+        if (_previewSpine == null)
+        {
+            UpdateFallbackIllustration();          // ★ 降级路径：跟着皮肤换立绘
+            return;
+        }
 
         var tag = OrcaSkin.Active + "/" + OrcaSkin.BattleSkeleton;
         if (tag == _previewSkinTag && _previewAnimStarted) return;   // 已经套好且动画在播 ⇒ 不重复动它

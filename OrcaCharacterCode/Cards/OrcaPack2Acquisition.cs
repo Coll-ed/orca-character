@@ -168,6 +168,72 @@ internal static class OrcaOrobasCardOptionPatch
     }
 }
 
+/// <summary>
+///     ★★★ **欧洛巴斯之触的第二道防线：不管从哪条路拿到它，都不给头环、都给【栖途】**
+///     （用户实测 2026-10-05：<i>"我用指令获得欧洛巴斯之触后还是直接把初始遗物变成头环了"</i>）。
+///
+///     <para><b>为什么还需要这一层</b>：上面那个 <see cref="OrcaOrobasCardOptionPatch" /> 挂在
+///     **先古事件的选项池**上 —— 只有"从事件页选它"那条路才会被拦。
+///     而**指令/控制台、其它模组、任何直接 `RelicCmd.Obtain(TouchOfOrobas)`** 的路径
+///     **完全不经过事件页** ⇒ 选项池补丁不会被触发，遗物的 <c>AfterObtained</c> 照跑
+///     ⇒ 起始遗物照旧被换成头环（用户实测的正是这条）。</para>
+///
+///     <para><b>两层不冲突、不会重复给牌</b>：事件路径下那一格已被换成卡牌选项
+///     ⇒ 玩家**根本不会获得**这个遗物 ⇒ 本补丁的 <c>AfterObtained</c> 不会被调用；
+///     只有"绕过事件直接拿到遗物"时才轮到本层生效。</para>
+///
+///     <para><b>为什么用 Prefix 返回 false</b>（同 <c>TouchOfOrobas.AfterObtained</c> 的性质）：
+///     它是 <c>async Task</c>、而 **Harmony 不 await** ⇒ Postfix 的时机不可靠；
+///     已逐行核对该方法**只做一次 <c>RelicCmd.Replace</c>**（把起始遗物换成
+///     <c>GetUpgradedStarterRelic</c>，奥卡不在 <c>RefinementUpgrades</c> 表里 ⇒ 兜底头环）
+///     ⇒ 整段跳过既拦掉替换，又不丢任何别的必要逻辑。</para>
+///
+///     <para>⚠️ 边界显式：拿不到 Owner 就**放行原逻辑**（返回 true）；出错也放行
+///     —— 宁可拿到头环，也不能因为我们的改动让玩家什么都没有。</para>
+/// </summary>
+[HarmonyPatch(typeof(TouchOfOrobas), "AfterObtained")]
+internal static class OrcaOrobasDirectObtainPatch
+{
+    private static bool Prefix(TouchOfOrobas __instance)
+    {
+        try
+        {
+            var owner = OwnerOf(__instance);
+            if (owner == null)
+            {
+                OrcaLog.Warn("[Orca] 欧洛巴斯之触（直接获得）：拿不到 Owner ⇒ 放行原逻辑（本次仍会换成头环）", 2);
+                return true;
+            }
+
+            OrcaLog.Info("[Orca] 欧洛巴斯之触（直接获得，没走事件页）：拦下起始遗物强化，改为给【栖途】", 2);
+            TaskHelper.RunSafely(OrcaPack2Acquisition.GrantToDeck(
+                owner, ModelDb.Card<OrcaHomestead>(), "欧洛巴斯之触（直接获得）"));
+
+            return false;                    // ★ 跳过原方法：不做那次 RelicCmd.Replace
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 欧洛巴斯之触（直接获得）·拦截出错 ⇒ 放行原逻辑：{ex.Message}", 2);
+            return true;
+        }
+    }
+
+    /// <summary>反射读 <c>Owner</c>（Player）—— <c>RelicModel.Owner</c> 的可访问性在各模型上不一致。</summary>
+    private static Player? OwnerOf(object relic)
+    {
+        try
+        {
+            var pi = AccessTools.Property(relic.GetType(), "Owner")
+                     ?? AccessTools.Property(typeof(RelicModel), "Owner");
+            return pi?.GetValue(relic) as Player;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}
+
 // ★ 2026-10-04 移除整段：原 OrcaReverseScaleSource（BOSS 战胜利按 0.5 概率给逆鳞、再独立掷点给睥睨）。
 //
 //   用户口径：「BOSS 专属奖励卡牌还是没掉落，去掉专属奖励吧，回归肉鸽随机属性」
