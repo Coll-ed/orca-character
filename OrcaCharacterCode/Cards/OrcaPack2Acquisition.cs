@@ -86,29 +86,67 @@ internal static class OrcaPack2Acquisition
 }
 
 /// <summary>
-///     ★ **栖途的获取途径** —— 拾取先古遗物「欧洛巴斯之触」（<see cref="TouchOfOrobas" />）时一并获得。
+///     ★★ **栖途的获取途径** —— 拾取先古遗物「欧洛巴斯之触」（<see cref="TouchOfOrobas" />）时获得。
 ///
-///     <para>反编译实据（<c>TouchOfOrobas</c>）：它的 <c>AfterObtained</c> 只做一件事 ——
-///     把玩家的**起始遗物升级**（<c>RefinementUpgrades</c> 映射表里只有 5 个原版角色的起始遗物，
-///     **没有奥卡** ⇒ 奥卡会拿到 <c>Circlet</c> 兜底）。我们不去动那个表（那是它自己的设计），
-///     只在其后**追加**栖途。</para>
+///     <para><b>用户口径 2026-10-05</b>：<i>"欧洛巴斯之触的话，我觉得我们**拦截它的遗物强化效果**，
+///     转而改成**给一张牌**"</i>。</para>
 ///
-///     <para>⚠️ <c>RelicModel.Owner</c> 在不同的模型上可访问性不一致（有的是 protected）
+///     <para><b>为什么拦</b>（反编译 <c>TouchOfOrobas</c> 实据）：它的 <c>AfterObtained</c>
+///     **只做一件事** —— 把起始遗物替换成 <c>RefinementUpgrades</c> 映射表里对应的强化版：
+///     <code>
+///     public override async Task AfterObtained()
+///     {
+///         ModelId id2 = UpgradedRelic ?? GetUpgradedStarterRelic(relicById).Id;
+///         await RelicCmd.Replace(relicById, ModelDb.GetById&lt;RelicModel&gt;(id2).ToMutable());
+///     }
+///     // 而 GetUpgradedStarterRelic 的兜底是：
+///     return ModelDb.Relic&lt;Circlet&gt;().ToMutable();      // ← 表里没有奥卡 ⇒ 白拿一个「头环」
+///     </code>
+///     ⇒ 奥卡的起始遗物是「银龙血统」，不在那张表里 ⇒ 会被换成**没用的头环**。
+///     我们不去改它那张表（那是它自己的设计），而是**整段拦下**，改成给栖途。</para>
+///
+///     <para>★★ <b>为什么用 Prefix 返回 false、而不是原来的 Postfix</b>：
+///     <list type="number">
+///       <item><c>AfterObtained</c> 是 <c>async Task</c>，而 **Harmony 不 await** ——
+///         原来的 Postfix 在它**刚起步（第一个 await 之前）**就跑，时机根本靠不住
+///         （这也正是"换了头环但没给牌"的成因之一）；</item>
+///       <item>Prefix 返回 false 是**整个方法都不执行** ⇒ 既拦掉了替换，又彻底绕开 async 时序问题；</item>
+///       <item>该方法**只有替换这一个动作** ⇒ 跳过它不会丢任何别的必要逻辑（已逐行核对）。</item>
+///     </list></para>
+///
+///     <para>⚠️ 边界显式：<b>拿不到 Owner 就放行原逻辑</b>（返回 true），绝不因为我们的改动
+///     让玩家拿不到这个遗物本该给的东西 —— 宁可拿到头环，也不能什么也没有。</para>
+///
+///     <para>⚠️ <c>RelicModel.Owner</c> 在不同模型上可访问性不一致（有的是 protected）
 ///     ⇒ 这里用反射读，避免编译期访问限制。</para>
 /// </summary>
 [HarmonyPatch(typeof(TouchOfOrobas), "AfterObtained")]
 internal static class OrcaOrobasTouchPatch
 {
-    private static void Postfix(TouchOfOrobas __instance)
+    /// <summary>Prefix 返回 false ⇒ **跳过原方法**（拦下"起始遗物 → 头环"的替换），改为给栖途。</summary>
+    private static bool Prefix(TouchOfOrobas __instance)
     {
         try
         {
             var owner = OwnerOf(__instance);
-            TaskHelper.RunSafely(OrcaPack2Acquisition.GrantToDeck(owner, ModelDb.Card<OrcaHomestead>(), "欧洛巴斯之触"));
+            if (owner == null)
+            {
+                OrcaLog.Warn("[Orca] 欧洛巴斯之触：拿不到 Owner ⇒ 放行原逻辑（本次不改给栖途）", 2);
+                return true;
+            }
+
+            OrcaLog.Info("[Orca] 欧洛巴斯之触：拦下起始遗物强化（奥卡不在 RefinementUpgrades 表里，"
+                       + "原逻辑会换成没用的头环）⇒ 改为给【栖途】", 2);
+
+            TaskHelper.RunSafely(OrcaPack2Acquisition.GrantToDeck(
+                owner, ModelDb.Card<OrcaHomestead>(), "欧洛巴斯之触（拦截遗物强化）"));
+
+            return false;                    // ★ 跳过原方法：不做那次 RelicCmd.Replace
         }
         catch (Exception ex)
         {
-            OrcaLog.Warn($"[Orca] 欧洛巴斯之触·给栖途失败：{ex.Message}", 2);
+            OrcaLog.Warn($"[Orca] 欧洛巴斯之触·拦截出错 ⇒ 放行原逻辑：{ex.Message}", 2);
+            return true;
         }
     }
 
