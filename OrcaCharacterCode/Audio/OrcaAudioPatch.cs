@@ -155,8 +155,13 @@ internal static class OrcaAudio
             var players = RunManager.Instance?.DebugOnlyGetState()?.Players;
             return players != null && LocalContext.GetMe(players)?.Character is Orca;
         }
-        catch
+        catch (Exception ex)
         {
+            // ★ 2026-10-05（纪律#4：禁止静默吞）：原来是裸 `catch { return false; }` ——
+            //   后果是"奥卡音效悄悄退回原版"，玩家听不出异常、日志里也查不到线索 ✗
+            //   返回值仍然是 false（口径不变：宁可不换，也不误伤别的角色），
+            //   但**留一条 Warn 作为唯一诊断线索** ✓
+            OrcaLog.Warn($"[Orca] 判定「本地玩家是不是奥卡」失败 ⇒ 本次退回原版音效：{ex.Message}", 2);
             return false;
         }
     }
