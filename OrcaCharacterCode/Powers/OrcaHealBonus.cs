@@ -31,43 +31,56 @@ namespace OrcaCharacter;
 /// </summary>
 public sealed class OrcaHealBonusPower : PowerModel
 {
-    /// <summary>每次消耗卡牌追加的临时加成（%）。★ 2026-09-23：5 → **10**。</summary>
+    /// <summary>每次消耗卡牌追加的加成（%）。★ 2026-09-23：5 → **10**。</summary>
     public const int PerExhaustPercent = 10;
-
-    /// <summary>★ 本场战斗内因消耗卡牌累加的加成（2026-09-23 起**不再每回合清零**）。</summary>
-    private int _tempPercent;
 
     public override PowerType Type => PowerType.Buff;
 
-    /// <summary>可叠层 —— 但语义是"常驻加成百分比"，不是层数。</summary>
+    /// <summary>可叠层 —— 语义是"治疗加成百分比"，不是层数。</summary>
     public override PowerStackType StackType => PowerStackType.Counter;
 
-    /// <summary>实际生效的总加成（%）= 常驻 + 本回合临时。</summary>
-    public int TotalPercent => (int)Amount + _tempPercent;
-
-    /// <summary>每次**消耗卡牌** → 本回合 +5%（用户口径）。</summary>
-    public override Task AfterCardExhausted(
+    /// <summary>
+    ///     每次**消耗卡牌** → 本场战斗再 +<see cref="PerExhaustPercent" />%。
+    ///
+    ///     <para>★★ <b>2026-10-05 修「图标的数字没跟着变」</b>（用户实测：
+    ///     「焚文是不是代码实际运行有效果？但是图标的数字没跟着变?」—— **就是这个问题**）。
+    ///     原先烧牌加成存在**另一个私有字段</b> <c>_tempPercent</c> 里，靠 <c>TotalPercent = Amount + _tempPercent</c>
+    ///     参与结算 ⇒ **效果真的生效，但图标上的数字永远只显示 <c>Amount</c>（常驻 20）**，
+    ///     玩家看不到它涨。</para>
+    ///
+    ///     <para><b>为什么改成直接涨 <c>Amount</c></b>（反编译 <c>PowerModel</c> 实据）：
+    ///     <list type="bullet">
+    ///       <item>浮窗文案用它：<c>locString.Add("Amount", Amount)</c>；</item>
+    ///       <item>引擎确实另留了一个 <c>public virtual int DisplayAmount =&gt; Amount</c> 可以只改"显示值"——
+    ///         但那样**图标变了、浮窗还是旧的**（两处不一致）⇒ 不用它；
+    ///         让 <c>Amount</c> 本身成为真值，**图标 / 浮窗 / 结算三处同源**；</item>
+    ///       <item>⚠️ <c>Amount</c> 的 setter 是 <c>private set</c>（编译器实测 <c>CS0200</c>）⇒
+    ///         改写要用**引擎自己的公开入口** <c>PowerCmd.ModifyAmount(...)</c>
+    ///         （它是 <c>Task&lt;int&gt;</c>，内部会走 <c>SetAmount</c> 并通知 UI）。</item>
+    ///     </list></para>
+    ///
+    ///     <para>★ 累计范围＝**本场战斗**（用户口径 2026-09-23：「焚文烧牌不是本回合，而是本场战斗了」），
+    ///     随 Power 一起在战斗结束时消失，所以直接写进 <c>Amount</c> 不会跨战斗泄漏。</para>
+    /// </summary>
+    public override async Task AfterCardExhausted(
         PlayerChoiceContext choiceContext,
         CardModel card,
         bool causedByEthereal)
     {
         try
         {
-            _tempPercent += PerExhaustPercent;
-            OrcaLog.Info($"[Orca] 焚文：消耗 {card.Id.Entry} → 本回合治疗加成 +{PerExhaustPercent}%"
-                     + $"（当前总加成 {TotalPercent}%）", 2);
+            // 用引擎的公开入口涨量（applier＝自己；这不是卡牌效果，cardSource 传 null）
+            await PowerCmd.ModifyAmount(choiceContext, this, PerExhaustPercent, Owner, null);
+
+            // 日志读的是改完之后的 Amount（不依赖 ModifyAmount 的返回值语义）
+            OrcaLog.Info($"[Orca] 焚文：消耗 {card.Id.Entry} → 治疗加成 +{PerExhaustPercent}%"
+                     + $"（当前共 {Amount}%）", 2);
         }
         catch (Exception ex)
         {
             OrcaLog.Warn($"[Orca] 焚文·消耗钩子出错：{ex.Message}", 2);
         }
-        return Task.CompletedTask;
     }
-
-    // ★★ 2026-09-23 用户口径：「焚文烧牌不是本回合，而是**本场战斗**了，不然太弱了」
-    //   ⇒ 原 `AfterPlayerTurnStart` 里"新回合清零 _tempPercent"的逻辑**整段删除**：
-    //     烧牌加成现在与常驻加成一样，累计到**本场战斗结束**（随 Power 一起消失）。
-    //     字段名保留 `_tempPercent` 以免动其它引用，语义已变成"本场累计的烧牌加成"。
 }
 
 /// <summary>
@@ -85,7 +98,8 @@ internal static class OrcaHealBonusPatch
             var power = creature.GetPower<OrcaHealBonusPower>();
             if (power == null) return;
 
-            int pct = power.TotalPercent;
+            // ★ 2026-10-05：加成现在就是 Amount 本身（烧牌直接涨 Amount ⇒ 图标/浮窗/结算同源）
+            int pct = power.Amount;
             if (pct <= 0) return;
 
             decimal boosted = Math.Ceiling(amount * (100 + pct) / 100.0m);
