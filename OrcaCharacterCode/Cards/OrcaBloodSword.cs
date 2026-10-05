@@ -44,8 +44,18 @@ public sealed class OrcaBloodSword : OrcaFrenzyCard
     /// <summary>敲后代价：失去最大生命的百分比。</summary>
     private const int UpgradedLifePercent = 30;
 
-    /// <summary>每击杀一个敌人获得的生命上限（卡面描述 / 结算 / 日志三处共用，单一来源）。</summary>
-    private const int MaxHpPerKill = 2;
+    /// <summary>
+    ///     每击杀一个敌人获得的生命上限（卡面描述 / 结算 / 日志三处共用）。
+    ///
+    ///     <para>★★ <b>数值不在这里写死</b>：龙剑规格是「每击杀**固定** +2、**不分档**」，
+    ///     这个 2 与普通战斗档位的击杀奖励是**同一个数值** ⇒ 直接引用
+    ///     <see cref="OrcaKillReward.Normal" />，消灭第二处字面量副本
+    ///     （<c>OrcaKillReward.Normal = 2</c> 是唯一来源）。</para>
+    ///
+    ///     <para>⚠️ <b>不要</b>改成 <c>OrcaKillReward.MaxHpFor(...)</c>：那是**按房间分档**的
+    ///     2/3/5，龙剑不分档 ⇒ 会改变行为（打精英/BOSS 时多给上限）。本处只需同源，不需分档。</para>
+    /// </summary>
+    private const int MaxHpPerKill = OrcaKillReward.Normal;
 
     /// <summary>「失去生命」转化为「伤害附加」的比例（一半）。卡面 Gain 与结算必须同一口径。</summary>
     private const decimal BonusConversion = 0.5m;

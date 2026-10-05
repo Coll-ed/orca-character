@@ -453,10 +453,27 @@ public sealed class OrcaVoidReturnPower : PowerModel
 ///     将你 25% 的临时生命上限转化为真实生命上限"</i>。</para>
 ///
 ///     <para>⚠️ <b>与银龙血统的配合</b>：遗物 <c>AfterCombatEnd</c> 会把**剩余**临时上限还原掉。
-///     我们从共享池 <see cref="OrcaTempHp" /> 里**先 Consume 掉 25%**，再加到真实上限上
-///     ⇒ 遗物随后只会还原剩下的 75%，不会把转化过的部分又扣回去。
-///     （两个 <c>AfterCombatEnd</c> 的**先后顺序**由引擎决定；若实测发现遗物先跑导致转化量为 0，
-///     就把这里改成在 <c>AfterCombatVictory</c> 更早的钩子里做 —— 已记为实机验证点。）</para>
+///     我们从共享池 <see cref="OrcaTempHp" /> 里**先 Consume 掉这个比例**，再加到真实上限上
+///     ⇒ 遗物随后只会还原剩下的 75%（敲后 50%），不会把转化过的部分又扣回去。</para>
+///
+///     <para>★★ <b>先后顺序已查实（不再是"由引擎决定"的待验证点）</b> —— 本 Power **先跑**，遗物**后跑**。
+///     两条反编译实据（<c>sts2.dll</c>，2026-10-05 复核）：
+///     <list type="number">
+///       <item><c>CombatManager.EndCombatInternal</c>（<c>CombatManager.cs:1320</c>）调
+///         <c>Hook.AfterCombatEnd(runState, combatState, room)</c>，<c>combatState</c> **非 null**；</item>
+///       <item><c>Hook.AfterCombatEnd</c>（<c>Hook.cs:472-479</c>）逐个 <c>await model.AfterCombatEnd(room)</c>，
+///         遍历源 = <c>RunState.IterateHookListeners(combatState)</c>（<c>RunState.cs:812</c>）。
+///         因为 <c>childCombatState != null</c>，那段的"遗物/药水"块被**跳过**
+///         （<c>RunState.cs:142-155</c>），遗物改由**末尾的** <c>combatState.IterateHookListeners()</c> 给出
+///         （<c>RunState.cs:197-213</c>）；而 <c>CombatState.IterateHookListeners()</c> 对每个生物
+///         **先 <c>AddRange(creature.Powers)</c>、再放该玩家的遗物**（<c>CombatState.cs:119-138</c>），
+///         盟友又排在敌人之前（<c>CombatState.cs:116-118</c>）
+///         ⇒ 玩家生物上的本 Power 排在银龙血统**之前**。</item>
+///     </list>
+///     ⇒ 顺序是**对我们有利**的那一种：Consume 掉的那部分遗物根本不会去还原（池子已经小了）。
+///     ⚠️ 但正因为遗物**后跑**，"GainMaxHp 这笔真实上限"必须**紧随其后抬基准**
+///     （见 <c>OrcaBloodline.AdvanceCombatBase</c>，与龙剑/魔剑击杀奖励同一根因），
+///     否则收尾那次绝对写回会把它**再多算一倍**。</para>
 /// </summary>
 public sealed class OrcaHomesteadPower : PowerModel
 {
@@ -487,6 +504,28 @@ public sealed class OrcaHomesteadPower : PowerModel
             if (me != null && used > 0)
             {
                 await CreatureCmd.GainMaxHp(me, used);        // 真实上限（会顺带回血，符合"转化"语义）
+
+                // ★★ 与击杀奖励（龙剑/魔剑）同理：谁赚到**真实**上限，谁就把本场基准一起推进。
+                //    本 Power 的 AfterCombatEnd 由引擎排在银龙血统**之前**（实据见类摘要），
+                //    所以这里是"先转化、后收尾"：若不抬基准，遗物收尾那次绝对写回会按
+                //    「基准 + 池子余量」重算 ⇒ 转化量被**多算一倍** ⇒ 战斗结束跳出 2×used。
+                //    抬基准之后：上限 = 新基准 + 池子余量，两边同时含这笔，幂等。
+                //    拿不到遗物（理论上不该发生：银龙血统是奥卡的起始遗物）⇒ 记 Error + 上限照旧，不静默吞。
+                //    ⚠️ 必须经 `Creature.Player` 才能拿到遗物：`PowerModel.Owner` 是 **Creature**（不是 Player），
+                //      Creature 上的公开属性是 `Player`（Creature.cs:104，可空）⇒ 用 ?. 链式取，
+                //      与同文件既有写法一致（见上方 Owner?.Player?.PlayerCombatState?...）。
+                //      （首次提交曾误写成 Owner.GetRelic<...> ⇒ CS1061；**只有真编译能抓到** ✗）
+                var bloodline = Owner?.Player?.GetRelic<OrcaBloodline>();
+                if (bloodline != null)
+                {
+                    bloodline.AdvanceCombatBase(used);
+                }
+                else
+                {
+                    OrcaLog.Error($"[Orca] 栖途：{used} 点已转为真实生命上限，"
+                                + "但**身上没有银龙血统** ⇒ 无法并进本场基准（收尾可能把这笔再加一次）");
+                }
+
                 OrcaLog.Info($"[Orca] 栖途：战斗结束 ⇒ 临时生命上限 {pool} 的 {Ratio:P0}"
                          + $"，共 {used} 点转化为**真实生命上限**（当前上限 {me.MaxHp}）", 2);
             }
