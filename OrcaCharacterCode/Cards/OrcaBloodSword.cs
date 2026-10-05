@@ -177,7 +177,11 @@ public sealed class OrcaBloodSword : OrcaFrenzyCard
         description.Add(new DynamicVar("Dealt", (decimal)_bonus));
         description.Add(new DynamicVar("MaxHpPerKill", (decimal)MaxHpPerKillValue));
         description.Add(new DynamicVar("LifestealPercent", (decimal)LifestealPercentDisplay));
-        description.Add("KeywordTags", $"[gold]{OrcaKeyword.Rampage.Title}[/gold]。\n[gold]永恒[/gold]。");
+        // ★★ 2026-10-05 删掉写死的「永恒」（用户口径：「龙剑介绍的永恒可以删除了」）。
+        //    上一版这里是 `$"...{Rampage.Title}。\n[gold]永恒[/gold]。"` ——
+        //    「永恒」是**我们自己拼死的字面量**，**不会**随 CanonicalKeywords 撤掉而自动消失
+        //    （我此前判断它会自动消失，是错的）。龙剑现在不带 CardKeyword.Eternal ⇒ 卡面也不该写它。
+        description.Add("KeywordTags", $"[gold]{OrcaKeyword.Rampage.Title}[/gold]。");
     }
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
