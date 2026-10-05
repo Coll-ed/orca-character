@@ -101,4 +101,41 @@ internal static class OrcaOrobasRelicText
             return false;
         }
     }
+
+    /// <summary>
+    ///     ★★ **压掉「欧洛巴斯之触」自带的"替换前后对照"浮窗**（用户 2026-10-05：
+    ///     <i>"指针悬停欧洛巴斯之触弹3框"</i> ⇒ <i>"只留它自己一框"</i>）。
+    ///
+    ///     <para><b>那两框从哪来</b>（反编译 <c>TouchOfOrobas</c> 实据）：
+    ///     <code>
+    ///     private List&lt;IHoverTip&gt; _extraHoverTips = new List&lt;IHoverTip&gt;();
+    ///     _extraHoverTips.AddRange(relicModel.HoverTips);          // L71 / L95
+    ///     protected override IEnumerable&lt;IHoverTip&gt; ExtraHoverTips =&gt; _extraHoverTips;   // L101
+    ///     </code>
+    ///     它本意是"给你看：起始遗物 → 换成什么"（对奥卡＝银龙血统 → 头环）。
+    ///     但**我们已经改了行为**（不给头环、改给栖途，见 <c>OrcaPack2Acquisition</c>）
+    ///     ⇒ 那两框**已经不成立、是在误导玩家** ⇒ 压掉，只留它自己那一框。</para>
+    ///
+    ///     <para>⚠️ 角色门禁照旧（复用外层 <see cref="IsOrcaOwner" />，不复制第二份判定）：
+    ///     别的角色的起始遗物**确实**有先古版可换，那句对照对他们是正确的 ⇒ 一律放行。
+    ///     拿不到 Owner / 出错也放行 —— 绝不因为我们的改动把浮窗弄坏。</para>
+    /// </summary>
+    [HarmonyPatch(typeof(TouchOfOrobas), "get_ExtraHoverTips")]
+    internal static class HoverTipsPatch
+    {
+        private static bool Prefix(TouchOfOrobas __instance,
+                                   ref System.Collections.Generic.IEnumerable<MegaCrit.Sts2.Core.HoverTips.IHoverTip> __result)
+        {
+            try
+            {
+                if (!IsOrcaOwner(__instance)) return true;      // 不是奥卡 ⇒ 原样（对照对他们是对的）
+                __result = System.Array.Empty<MegaCrit.Sts2.Core.HoverTips.IHoverTip>();
+                return false;
+            }
+            catch
+            {
+                return true;                                    // 出错放行原逻辑，不弄坏浮窗
+            }
+        }
+    }
 }
