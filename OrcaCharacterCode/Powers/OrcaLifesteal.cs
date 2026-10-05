@@ -28,7 +28,7 @@ namespace OrcaCharacter;
 ///       · 判定 <c>dealer == Owner</c>（是本玩家打出的）
 ///       · 判定 <c>cardSource is OrcaBloodSword</c>（带【魔剑】标签的那张牌）
 ///       · 判定是攻击、且**未被格挡**的伤害 &gt; 0
-///       · 回复 <c>ceil(未格挡伤害 × Percent%)</c>，然后**减一层**
+///       · 回复 <c>ceil(未格挡伤害 × 倍率)</c>（龙剑类型再 × 当前层数），然后按档位决定是否清层
 ///     </para>
 /// </summary>
 public sealed class OrcaLifestealPower : PowerModel
@@ -40,9 +40,11 @@ public sealed class OrcaLifestealPower : PowerModel
     public const int Percent = 25;
 
     /// <summary>
-    ///     ★★ **龙剑类型**打出时的倍率（50%）—— **向上取整**，且**消耗 1 层**。
+    ///     ★★ **龙剑类型**打出时的倍率（50%）—— **向上取整**，且**一口气结清全部层数**。
     ///     用户口径 2026-09-23：「在魔剑打出的吸血倍率是 50%（向上取整）」
     ///     + 「吸血是只有被**龙剑类型**的伤害卡牌打出才会**消耗**并获得**额外倍率**」。
+    ///     ★ 2026-10-06 用户裁定「代码服从文案」：回复量再 **× 当前层数**，层数**一次性清空**
+    ///     （原来是"50% 一次 + 减 1 层"，与游戏内文案「× 当前层数，一口气结清所有层数」不符 ✗）。
     ///     "龙剑类型" = 魔剑体系那两张攻击牌（嗜血龙剑 / 嗜血魔剑）。
     /// </summary>
     public const int MaxBladePercent = 50;
@@ -89,12 +91,25 @@ public sealed class OrcaLifestealPower : PowerModel
             //    ⚠️ 旧的"单敌 ⇒ 50%"覆盖机制（PercentOverride）已被取代 ⇒ 已删除。
             bool isSword = cardSource is OrcaBloodSword or OrcaBloodBlade;
 
+            // ★★ 2026-10-06 用户裁定：**代码服从文案** —— 游戏内文案写的是
+            //    「[gold]龙剑类型[/gold]（嗜血龙剑 / 嗜血魔剑）→ 伤害的 50%（向上取整）× 当前层数，
+            //      **一口气结清所有层数**」
+            //    而原来是"50% 只算一次 + 减 1 层"（旧口径，与上面的文案不一致 ✗ —— 用户实测
+            //    "叠了 3 层龙剑打出后只消耗了一层"就是这个不一致暴露出来的）。
+            //    现按文案改为：
+            //      · 回复量 = ceil(未被格挡伤害 × 50%) × **当前层数**
+            //      · **一次性清空全部层数**（Remove ⇒ 层数归零、Power 消失）
+            //    ⚠️ 已知代价（如实记录）：同一张牌产生**多次伤害实例**时（例如狂躁的嗜血魔剑打全体），
+            //      只有**第一次**实例能吃到层数 —— 第一次就把层数结清了。这是"一口气结清"口径的
+            //      必然结果，不是缺陷；若日后要改成"每个目标各结清一次"，得改口径而不是改这里。
+            int layers = (int)Amount;                        // 先取层数（下面结算过程中会被清空）
+
             int healed;
             string which;
             if (isSword)
             {
-                healed = (int)Math.Ceiling(result.UnblockedDamage * MaxBladePercent / 100.0);
-                which = $"龙剑类型 {MaxBladePercent}%（向上取整）";
+                healed = (int)Math.Ceiling(result.UnblockedDamage * MaxBladePercent / 100.0) * layers;
+                which = $"龙剑类型 {MaxBladePercent}%（向上取整）× {layers} 层";
             }
             else
             {
@@ -109,10 +124,10 @@ public sealed class OrcaLifestealPower : PowerModel
             await CreatureCmd.Heal(creature, healed, true);
             OrcaLog.Info($"[Orca] 吸血触发：{which}，未被格挡伤害 {result.UnblockedDamage} → 回复 {healed} 点生命"
                      + $"（{before} → {creature.CurrentHp}）"
-                     + (isSword ? $"，消耗 1 层 → 剩余 {Amount - 1}" : "，**不消耗层数**"), 2);
+                     + (isSword ? $"，一口气结清 {layers} 层" : "，**不消耗层数**"), 2);
 
-            // ④ ★ 只有**龙剑类型**才消耗一层（用户口径："其他卡牌打出不消耗的"）
-            if (isSword) await PowerCmd.Decrement(this);
+            // ④ ★ 只有**龙剑类型**才消耗层数，且是**一口气结清全部层数**（用户 2026-10-06 裁定）
+            if (isSword) await PowerCmd.Remove(this);
         }
         catch (Exception ex)
         {
