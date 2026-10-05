@@ -1,7 +1,7 @@
 {
-  "ORCA_BLOOD_BLADE.description": "{KeywordTags}\n消耗最大生命{LifePercent:diff()}%（{HpLoss:diff()}血），获得 1 层[gold]吸血[/gold]，并把这份失去的生命全额转为伤害附加（{Bonus:diff()}）。\n当被[gold]狂躁[/gold]打出时，对所有敌人造成{Bonus:diff()}点伤害；若只对一名敌人造成伤害，[gold]吸血[/gold]的倍率额外提升到{LifestealPercent:diff()}%。\n击杀敌人获得 2 点生命上限（精英 3 点 / BOSS 5 点）。",
+  "ORCA_BLOOD_BLADE.description": "{KeywordTags}\n消耗最大生命{LifePercent:diff()}%（{HpLoss:diff()}血），获得 1 层[gold]吸血[/gold]，并把这份失去的生命全额转为伤害附加（{Bonus:diff()}）。\n当被[gold]狂躁[/gold]打出时，对所有敌人造成{Bonus:diff()}点伤害；若只对一名敌人造成伤害，[gold]吸血[/gold]的倍率额外提升到{LifestealPercent:diff()}%。\n击杀敌人获得{KillNormal:diff()}点生命上限（精英{KillElite:diff()}点 / BOSS{KillBoss:diff()}点）。",
   "ORCA_BLOOD_BLADE.title": "嗜血魔剑",
-  "ORCA_BLOOD_FORGE.description": "减少当前{Percent:diff()}%总生命上限（{MaxHpLoss:diff()}血），回复等量生命。\n（先扣战斗临时上限，不够再扣原有上限。）",
+  "ORCA_BLOOD_FORGE.description": "减少当前{Percent:diff()}%战斗中的最大生命上限（{MaxHpLoss:diff()}血），回复等量生命。\n（先扣战斗临时上限，不够再扣原有上限。）",
   "ORCA_BLOOD_FORGE.title": "铸血",
   "ORCA_BLOOD_NIRVANA.description": "当你受到致命伤害时，消耗所有临时生命上限，回复其中 {HealPercent:diff()}%（{Heal:diff()}血）的生命。\n触发一次后消失。",
   "ORCA_BLOOD_NIRVANA.line": "[sine]杀不死我的，我会更强大！[/sine]",
@@ -12,7 +12,7 @@
   "ORCA_BLOOD_SWORD.state.description": "主动打出：失去 {LifePercent:diff()}%（{HpLoss:diff()}血）最大生命，获得 {Gain:diff()} 点伤害附加。\n已累计伤害附加：{Bonus:diff()}。\n被狂躁打出：对所有敌人造成 {Bonus:diff()} 点伤害。",
   "ORCA_BLOOD_SWORD.state.title": "当前战况",
   "ORCA_BLOOD_SWORD.title": "嗜血龙剑",
-  "ORCA_CODEX_EMBER.description": "获得{Percent:diff()}%生命回复效率；每消耗一张牌，本场战斗再获得{PerExhaust:diff()}%。",
+  "ORCA_CODEX_EMBER.description": "获得{Percent:diff()}%额外治疗加成；每消耗一张牌，本场战斗再获得{PerExhaust:diff()}%。",
   "ORCA_CODEX_EMBER.title": "焚文",
   "ORCA_CODEX_IGNITION.description": "消耗 1 张手牌，使下次的[gold]龙族魔典[/gold]打出次数额外加 1。",
   "ORCA_CODEX_IGNITION.pick": "选择一张牌消耗",

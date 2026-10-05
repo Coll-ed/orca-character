@@ -130,6 +130,13 @@ public sealed class OrcaBloodBlade : OrcaFrenzyCard
         // ★ 文案里的 {LifestealPercent:diff()}。它的**数值效果**就是下面 HealFromSingleTarget 的回血量
         //   （吸血倍率 100% ⇔ 回血 = 伤害本身），见 SingleTargetLifestealPercent 的注释。
         description.Add(new DynamicVar("LifestealPercent", (decimal)SingleTargetLifestealPercent));
+        // ★★ 2026-10-05 单一来源（审计清单 A12）：卡面的三档击杀奖励此前是**字面量 2/3/5**，
+        //    与 OrcaKillReward 的常量构成双份定义 ⇒ 现改为直接引用那三个常量。
+        //    数值口径与击杀结算（本文件下方 OrcaKillReward.MaxHpFor）**同源**，改常量即卡面同步。
+        //    ⚠️ 变量一个都不能少：缺任一个，SmartFormat 会报 No suitable Formatter ⇒ 整条卡面回退原文。
+        description.Add(new DynamicVar("KillNormal", (decimal)OrcaKillReward.Normal));
+        description.Add(new DynamicVar("KillElite", (decimal)OrcaKillReward.Elite));
+        description.Add(new DynamicVar("KillBoss", (decimal)OrcaKillReward.Boss));
         // ★★ 2026-10-05 补上「狂躁」（用户实测：「魔剑的狂躁标签没有在卡面介绍体现」）：
         //    本牌类摘要已写明 —— 权威卡面**明写本牌带「狂躁」**，且用户把狂躁定义为
         //    「狂躁标签又自带了2端代码：奇巧，消耗联动（如战鼓）」⇒ 凡是狂躁卡卡面就该有这个词。
