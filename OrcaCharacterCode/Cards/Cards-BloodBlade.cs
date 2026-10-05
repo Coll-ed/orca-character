@@ -130,7 +130,16 @@ public sealed class OrcaBloodBlade : OrcaFrenzyCard
         // ★ 文案里的 {LifestealPercent:diff()}。它的**数值效果**就是下面 HealFromSingleTarget 的回血量
         //   （吸血倍率 100% ⇔ 回血 = 伤害本身），见 SingleTargetLifestealPercent 的注释。
         description.Add(new DynamicVar("LifestealPercent", (decimal)SingleTargetLifestealPercent));
-        description.Add("KeywordTags", $"[gold]{OrcaSwordState.Title}[/gold]。\n[gold]永恒[/gold]。");
+        // ★★ 2026-10-05 补上「狂躁」（用户实测：「魔剑的狂躁标签没有在卡面介绍体现」）：
+        //    本牌类摘要已写明 —— 权威卡面**明写本牌带「狂躁」**，且用户把狂躁定义为
+        //    「狂躁标签又自带了2端代码：奇巧，消耗联动（如战鼓）」⇒ 凡是狂躁卡卡面就该有这个词。
+        //    而这里此前只拼了 {状态} 与「永恒」⇒ 卡面**看不到狂躁** ✗
+        //
+        //    ⚠️ 待办（单一来源）：这个「狂躁」目前是**字面量**。若别的狂躁卡也各拼一份，
+        //    就违反"同一份数据只有一处定义"——应当抽到 OrcaKeyword 里做一个 FrenzyTag
+        //    （与 EternalTag 同一套做法）。本轮先按最小改动补上可见性。
+        description.Add("KeywordTags",
+            $"[gold]{OrcaSwordState.Title}[/gold]。\n[gold]狂躁[/gold]。\n[gold]永恒[/gold]。");
     }
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
