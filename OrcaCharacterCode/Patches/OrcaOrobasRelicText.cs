@@ -62,6 +62,11 @@ internal static class OrcaOrobasRelicText
         {
             if (instance is not TouchOfOrobas) return true;
 
+            // ★★ 角色门禁（用户口径 2026-10-05：「只有角色是奥卡时才启用」）——
+            //    别的角色确实有先古版起始遗物可换，那句「替换为先古版本」对他们是**正确**的，
+            //    绝不能被我们改成「获得栖途」。
+            if (!IsOrcaOwner(instance)) return true;
+
             result = new LocString(OrcaOrobasRelicTextPatch.LocFile,
                                    OrcaOrobasRelicTextPatch.TextKey);
             return false;
@@ -70,6 +75,30 @@ internal static class OrcaOrobasRelicText
         {
             OrcaLog.Warn($"[Orca] 欧洛巴斯之触·改文案出错（用原文案）：{ex.Message}", 2);
             return true;
+        }
+    }
+
+    /// <summary>
+    ///     持有者是不是奥卡。
+    ///     <c>RelicModel.Owner</c> 的可访问性在各模型上不一致（有的是 protected）⇒ 走反射；
+    ///     再反射读 <c>Player.Character</c>，避免为了一个判等多引一个命名空间。
+    ///     拿不到就返回 <c>false</c>（＝**不改文案**，保持原版），宁可不改也不误改。
+    /// </summary>
+    private static bool IsOrcaOwner(RelicModel relic)
+    {
+        try
+        {
+            var ownerProp = AccessTools.Property(relic.GetType(), "Owner")
+                            ?? AccessTools.Property(typeof(RelicModel), "Owner");
+            var owner = ownerProp?.GetValue(relic);
+            if (owner == null) return false;
+
+            var character = AccessTools.Property(owner.GetType(), "Character")?.GetValue(owner);
+            return character is Orca;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

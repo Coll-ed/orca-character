@@ -135,6 +135,16 @@ internal static class OrcaOrobasCardOptionPatch
         {
             if (__result == null) return;
 
+            // ★★ 角色门禁（用户口径 2026-10-05：「要加入一个，只有角色是奥卡时才启用」）——
+            //    别的角色拿到欧洛巴斯之触时必须**保持原样**（他们的起始遗物确实有先古版本可换，
+            //    原始机制对他们是正确的）。判法照抄引擎自己的写法（NRestSiteCharacter 里就是
+            //    `Player.Character is Necrobinder` 这样判具体角色的）。
+            if (__instance.Owner?.Character is not Orca)
+            {
+                OrcaLog.Info("[Orca] 欧洛巴斯之触：当前角色不是奥卡 ⇒ 不介入（保持原版选项）", 2);
+                return;
+            }
+
             var list = new List<MegaCrit.Sts2.Core.Events.EventOption>(__result);
             var removed = list.RemoveAll(o => o?.Relic is TouchOfOrobas);
             if (removed == 0) return;         // 本次没提供那个遗物（例如玩家没有起始遗物）⇒ 一律不动
@@ -187,29 +197,19 @@ internal static class OrcaOrobasCardOptionPatch
     /// </summary>
     internal static async Task OfferHomesteadReward(Player owner, string reason)
     {
-        try
-        {
-            // ★★ 必须传**可变实例**（`.ToMutable()`）：canonical（模板）模型不能用在奖励里 ——
-            //    实机日志实锤：`Canonical model of type OrcaCharacter.OrcaHomestead used in incorrect place.`
-            //    这也正是"没有加入卡组动画"的根因：奖励流程被引擎拒绝 ⇒ 退回直接进卡组 ⇒ 没有界面/动画。
-            //    引擎自己的惯例同此：Orobas.cs 里就是 ModelDb.Relic<TouchOfOrobas>().ToMutable()。
-            var card = ModelDb.Card<OrcaHomestead>().ToMutable();
-            var rewards = new List<MegaCrit.Sts2.Core.Rewards.Reward>
-            {
-                new MegaCrit.Sts2.Core.Rewards.SpecialCardReward(card, owner),
-            };
-
-            await new MegaCrit.Sts2.Core.Rewards.RewardsSet(owner)
-                .WithCustomRewards(rewards)
-                .Offer();
-
-            OrcaLog.Info($"[Orca] {reason}：已把【栖途】作为奖励发出（走奖励界面 ⇒ 有加入卡组的动画）", 2);
-        }
-        catch (Exception ex)
-        {
-            OrcaLog.Warn($"[Orca] {reason}：发奖励失败 ⇒ 退回直接进卡组：{ex.Message}", 2);
-            await OrcaPack2Acquisition.GrantToDeck(owner, ModelDb.Card<OrcaHomestead>(), reason);
-        }
+        // ★★★ 2026-10-05 **撤回"走奖励流程"这条路**（用户实测：<i>"点击加入了后，界面卡死，卡牌没有正常按照流程加入"</i>）。
+        //
+        //   走过的弯路（留档，别再走）：
+        //     · 先试 `new RewardsSet(owner).WithCustomRewards(...).Offer()` —— 奖励界面**确实弹出来了**
+        //       （用户截图见「搜刮！将栖途加入你的牌组。」），但**点完之后整个界面卡死**、
+        //       卡牌也没按流程进牌组。
+        //     · 原因：`RewardsSet.Offer()` 会 **await 玩家把奖励取走**，
+        //       而它是在**事件选项的 onChosen 回调里**被调用的 ⇒ 事件流程在等这个 Task 返回、
+        //       这个 Task 又在等奖励界面的完成信号 ⇒ **互相等待 = 死锁**。
+        //   结论：**在事件回调里不能直接弹奖励界面**。想要"加入卡组的动画"，
+        //   必须找引擎认可的时机（例如事件关闭之后再弹），那是另一件要单独查证的事 ——
+        //   在此之前**宁可没有动画，也绝不能卡死**。
+        await OrcaPack2Acquisition.GrantToDeck(owner, ModelDb.Card<OrcaHomestead>(), reason);
     }
 }
 
@@ -247,6 +247,14 @@ internal static class OrcaOrobasDirectObtainPatch
             if (owner == null)
             {
                 OrcaLog.Warn("[Orca] 欧洛巴斯之触（直接获得）：拿不到 Owner ⇒ 放行原逻辑（本次仍会换成头环）", 2);
+                return true;
+            }
+
+            // ★★ 角色门禁（同事件页那条）：**只有奥卡**才拦 —— 别的角色的起始遗物本来就有先古版本，
+            //    原始强化机制对他们是正确的，绝不能被我们改掉。
+            if (owner.Character is not Orca)
+            {
+                OrcaLog.Info("[Orca] 欧洛巴斯之触（直接获得）：当前角色不是奥卡 ⇒ 放行原版强化", 2);
                 return true;
             }
 
