@@ -244,6 +244,24 @@ public sealed class OrcaBloodBlade : OrcaFrenzyCard
                 int perKill = OrcaKillReward.MaxHpFor(Owner);
                 int gain = kills * perKill;
                 await CreatureCmd.GainMaxHp(Owner.Creature, gain);
+
+                // ★★ 2026-10-05 与龙剑**同一根因**：银龙血统按「战斗基准 + 临时池」**绝对写回**生命上限
+                //    （OrcaRelic.cs 的 _combatBaseMaxHp），而这笔击杀奖励是**真实**上限、原本不在基准里
+                //    ⇒ 杀掉**场上最后一只**（战斗随即结束）时会被收尾那次写回按旧基准覆盖掉
+                //    （回血仍会冒出来 —— 那是 GainMaxHp 内部 Heal 的副作用）。
+                //    ⇒ 必须**紧随** GainMaxHp 把本场基准一起推进：加了这笔之后基准才包含它。
+                //    拿不到遗物（理论上不该发生：银龙血统是奥卡的起始遗物）⇒ 记 Error + **加血照旧**，不静默吞。
+                var bloodline = Owner.GetRelic<OrcaBloodline>();
+                if (bloodline != null)
+                {
+                    bloodline.AdvanceCombatBase(gain);
+                }
+                else
+                {
+                    OrcaLog.Error($"[Orca] 嗜血魔剑击杀 {kills} 个敌人 → 生命上限 +{gain} 已生效，"
+                                + "但**身上没有银龙血统** ⇒ 无法并进本场基准（本场收尾可能把这笔抹掉）", 2);
+                }
+
                 Log.Info($"[Orca] 嗜血魔剑击杀 {kills} 个敌人 → 生命上限 +{gain}"
                          + $"（{OrcaKillReward.Describe(Owner)}，每个 +{perKill}）", 2);
             }

@@ -368,6 +368,61 @@ public sealed class OrcaBloodline : RelicModel
         }
     }
 
+    /// <summary>
+    ///     ★★ **把一笔"战斗中赚到的真实生命上限"并入本场基准** —— 2026-10-05 修：
+    ///     击杀奖励（龙剑 / 魔剑，档位数值单一来源见 <see cref="OrcaKillReward" />）
+    ///     在**杀掉场上最后一只敌人**时会被战斗收尾的还原抹掉。
+    ///
+    ///     <para><b>本次修的实机反馈</b>：杀掉**场上最后一只**敌人（战斗随即结束、进搜刮奖励界面）时
+    ///     **回血冒出来了，但生命上限没有加上**；而杀第一只（死后战斗仍继续）时能正常 +2。
+    ///     （回血是 <c>CreatureCmd.GainMaxHp</c> 内部 <c>await Heal(...)</c> 的副作用，
+    ///     所以它反而**证明**击杀那段代码确实执行了。）</para>
+    ///
+    ///     <para><b>根因</b>：本类的上限管理是**绝对写回**（为什么必须是绝对写回见
+    ///     <see cref="_combatBaseMaxHp" /> 的注释），而两处写回的目标值都只由
+    ///     「战斗开始冻结的基准 + 临时池」构成：
+    ///     <list type="bullet">
+    ///       <item>回合开始重挂：<c>want = _combatBaseMaxHp + TempMaxHp</c>（见 <see cref="AfterPlayerTurnStart" />）；</item>
+    ///       <item>战斗结束还原：<c>target = max(basis, MaxHp − pool)</c>（见 <see cref="AfterCombatEnd" />）。</item>
+    ///     </list>
+    ///     击杀奖励那笔是**真实**上限，它从来没进过「基准」⇒ 引擎一把上限同步回持久值，
+    ///     下一次重算 / 收尾就按**旧基准**把它覆盖掉。</para>
+    ///
+    ///     <para>⇒ 谁赚到真实上限，谁就**紧随其后**把基准一起推进（本方法）。
+    ///     推进之后：基准 = 战斗开始的上限 + 本场赚到的真实上限，
+    ///     于是后续每回合重挂与战斗结束还原都**包含这笔**，不会再抹掉它。</para>
+    ///
+    ///     <para>⚠️ <b>绝不能把绝对写回改成减法</b>：2026-09-17 实机实锤（日志见
+    ///     <see cref="_combatBaseMaxHp" />）—— 引擎**过不了回合边界**会自己把玩家生物的上限同步回持久值。
+    ///     减法在"引擎已经清过"的那一侧会**永久亏上限**；绝对写回是幂等的，引擎清没清都不亏。
+    ///     本方法只把基准抬高，**一个字都不动那套写回机制**。</para>
+    /// </summary>
+    /// <param name="gain">本场战斗中**真实**赚到的生命上限（击杀奖励等），必须 &gt; 0。</param>
+    internal void AdvanceCombatBase(decimal gain)
+    {
+        if (gain <= 0) return;                  // 没赚到就不动账（边界显式；不打日志，避免每击一次刷屏）
+
+        // ★★ 本场基准还没记过 = 战斗**尚未开始**或**已经结束**（`_combatBaseMaxHp` 已在 AfterCombatEnd 里归零）。
+        //    这两种情况都**不许凭空造基准**：
+        //      · 尚未开始：基准的语义是"战斗开始时那个真实上限"，由回合钩子按当时的 MaxHp 去记；
+        //        在这里拿 gain 现造一个，会把战斗前的持久上限算漏（基准偏小 ⇒ 收尾反而把上限压低）；
+        //      · 已经结束：收尾那次绝对写回**已经跑完**，此刻再抬基准不会被重算第二次，
+        //        只会污染**下一场战斗**的开场记账。
+        //    ⇒ 只记日志、安全返回。**不静默吞**：这行 Warn 就是"这笔上限可能已经被抹掉"的排查依据。
+        if (_combatBaseMaxHp <= 0)
+        {
+            OrcaLog.Warn($"[Orca] 银龙血统：收到真实生命上限 +{gain}，但本场基准未记录"
+                      + "（战斗尚未开始或已结束）⇒ 不动基准"
+                      + "（那笔上限已由 GainMaxHp 直接写在当前上限上）", 2);
+            return;
+        }
+
+        decimal before = _combatBaseMaxHp;
+        _combatBaseMaxHp += gain;
+        OrcaLog.Info($"[Orca] 银龙血统：本场基准生命上限 {before} → {_combatBaseMaxHp}"
+                  + $"（并入战斗中赚到的真实 +{gain} ⇒ 之后每回合重挂与战斗结束还原都会算上它）", 2);
+    }
+
     /// <summary>统一的触发表现：原版遗物闪光特效 + 能量球形态切回龙头 + 日志。</summary>
     private void TriggerFx(string what)
     {
