@@ -166,9 +166,12 @@ public sealed class OrcaBurnPower : PowerModel
                 if (p == null) continue;
                 if (molten)
                 {
-                    // 口径："只消耗 50% 层数" ⇒ 移除一半（向上取整，剩余层数保留 ✓）
+                    // 口径："只消耗 50% 层数" ⇒ 移除一半（**向下取整**，剩余层数保留 ✓）
+                    // 依据：权威 卡牌说明2.txt:28「每次触发只消耗50%（具体数值向下取整）层数」
+                    //   例：5 层 ⇒ 扣 2 留 3（此前写成 Ceiling ⇒ 扣 3 留 2，与权威相反 ✗）
+                    // 来源：2026-10-05 用户裁定「按 work 权威改」（清单条目 A1）
                     // API 实据（ilspy 反编译 sts2.dll）：PowerCmd.ModifyAmount(ctx, power, offset) : Task<int> ✓
-                    int half = (int)Math.Ceiling(p.Amount / 2m);
+                    int half = p.Amount / 2; // 整数除法＝对非负层数向下取整（原为 Math.Ceiling，已按权威订正）
                     // 完整签名实据（ilspy）：ModifyAmount(ctx, power, offset, Creature? applier, CardModel? cardSource, bool silent=false) ✓
                     if (half > 0) await PowerCmd.ModifyAmount(choiceContext, p, -half, null, null);
                 }
