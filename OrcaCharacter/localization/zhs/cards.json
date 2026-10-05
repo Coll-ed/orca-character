@@ -32,7 +32,7 @@
   "ORCA_EMBER_WING.description": "获得 1 层[gold]翱翔[/gold]（为奥卡提供 50% 的减伤；受到敌人未被格挡的生命伤害时减少 1 层）。{Expire}",
   "ORCA_EMBER_WING.line": "[sine]翅膀，展开。[/sine]",
   "ORCA_EMBER_WING.title": "烬血之翼",
-  "ORCA_FIRE_CLOAK.description": "获得{Block:diff()}点格挡；场上每存在 1 点[gold]焚烧[/gold]，额外获得 1 点格挡。",
+  "ORCA_FIRE_CLOAK.description": "获得{Block:diff()}点格挡；场上每存在 1 点[gold]焚烧[/gold]，额外获得{BlockPerBurn:diff()}点格挡。",
   "ORCA_FIRE_CLOAK.line": "[sine]火在替我挡。[/sine]",
   "ORCA_FIRE_CLOAK.title": "飞火披肩",
   "ORCA_FRENZY_SLASH.description": "将当前手牌中的攻击牌消耗，打出你所携带的那把剑。",

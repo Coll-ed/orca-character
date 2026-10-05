@@ -266,6 +266,28 @@ public sealed class OrcaFireCloak : OrcaCard
     /// <summary>1 费 · Skill · Uncommon · Self。</summary>
     public OrcaFireCloak() : base(1, (CardType)2, (CardRarity)3, (TargetType)1) { }
 
+    /// <summary>
+    ///     基础：每 1 点【焚烧】额外获得的格挡。
+    /// </summary>
+    private const int BaseBlockPerBurn = 1;
+
+    /// <summary>
+    ///     敲后：每 1 点【焚烧】额外获得的格挡。
+    ///
+    ///     <para>★★ <b>2026-10-05 用户裁定（第二次澄清，推翻了上一版实现）</b>：
+    ///     权威 <c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> 那句「敲后**额外**获得2点格挡」
+    ///     指的是**这个换算率变成 2**（1 点焚烧 → 2 点格挡），
+    ///     <b>不是</b>"基础格挡 +2"。用户原话：
+    ///     <i>"敲后1：2，你把我那个敲后额外获得2点格挡理解为多得到2点格挡了"</i>。</para>
+    ///
+    ///     <para>⇒ 基础格挡两版**都是 10**（不随升级变），变的只有换算率。
+    ///     上一版把它当成"基础 +2 ⇒ 12"（<c>UpgradeBlockStep</c>）是理解错误，已撤。</para>
+    /// </summary>
+    private const int UpgradedBlockPerBurn = 2;
+
+    /// <summary>当前换算率（由 <c>IsUpgraded</c> 派生 ⇒ 只有一个写入点，照 <c>OrcaHomestead.CurrentPercent</c> 的写法）。</summary>
+    private int BlockPerBurn => IsUpgraded ? UpgradedBlockPerBurn : BaseBlockPerBurn;
+
     protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new BlockVar(10m, (ValueProp)8) };
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
@@ -282,26 +304,28 @@ public sealed class OrcaFireCloak : OrcaCard
             }
         }
 
-        // ② 基础 + 焚烧加成
-        int total = (int)DynamicVars.Block.BaseValue + burnTotal;
+        // ② 基础 + 焚烧 × 换算率（换算率 1 或 2，由 IsUpgraded 派生；基础格挡恒为 10）
+        int total = (int)DynamicVars.Block.BaseValue + burnTotal * BlockPerBurn;
         await CreatureCmd.GainBlock(Owner.Creature, (decimal)total, (ValueProp)8, play, false);
 
-        Log.Info($"[Orca] 飞火披肩：基础 {DynamicVars.Block.BaseValue} + 场上焚烧 {burnTotal} "
+        Log.Info($"[Orca] 飞火披肩：基础 {DynamicVars.Block.BaseValue} + 场上焚烧 {burnTotal} × {BlockPerBurn} "
                  + $"= 获得 {total} 点格挡", 2);
     }
 
     /// <summary>
-    ///     敲后额外获得的格挡量。
+    ///     ★ 把**换算率**注进卡面（<c>ORCA_FIRE_CLOAK.description</c> 里的 <c>{BlockPerBurn:diff()}</c>）。
     ///
-    ///     <para>★★ <b>2026-10-05 用户裁定</b>：「**敲后额外获得 2 点格挡**（忘记改权威了）」
-    ///     ⇒ 基础 10 → 敲后 <b>12</b>。</para>
+    ///     <para>为什么要注入：文案写死的数字**升级前后一模一样**，而本牌的升级恰恰只改这个换算率
+    ///     （1 → 2）⇒ 不注入的话敲后卡面会继续写"1 点格挡"，与实际结算脱钩。
+    ///     数值取自 <see cref="BlockPerBurn" />（结算用的同一个属性）⇒ 卡面与结算**不可能脱钩**
+    ///     （单一来源）。</para>
     ///
-    ///     <para>⚠️ 权威 <c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> 那句「敲后获得13格挡」
-    ///     是**用户自己写错**的（原话：「忘记改权威了」）⇒ 以用户口径 +2 为准，
-    ///     旧代码这里写的是 <c>3m</c>（得 13），已按裁定更正为 +2。</para>
+    ///     <para>⚠️ 必须用 <c>DynamicVar</c>：带格式化器 <c>diff()</c> 的占位符若给裸 decimal，
+    ///     SmartFormat 会报 <c>No suitable Formatter</c> ⇒ 整条卡面回退成原文。</para>
     /// </summary>
-    private const int UpgradeBlockStep = 2;
+    protected override void AddExtraArgsToDescription(LocString description)
+        => description.Add(new DynamicVar("BlockPerBurn", (decimal)BlockPerBurn));
 
-    /// <summary>敲后：基础格挡 10 → **12**（+<see cref="UpgradeBlockStep" />）。</summary>
-    protected override void OnUpgrade() => DynamicVars.Block.UpgradeValueBy(UpgradeBlockStep);
+    /// <summary>敲后不再改数值 —— 换算是 <see cref="BlockPerBurn" /> 按 <c>IsUpgraded</c> 派生的（照 <c>OrcaVoidReturn</c> 的写法）。</summary>
+    protected override void OnUpgrade() { }
 }

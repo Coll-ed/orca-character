@@ -67,6 +67,30 @@ internal static class OrcaSceneSkin
     internal const string CharSelectIdleAnimation = "animation";
 
     /// <summary>
+    ///     篝火按**章节**播的待机动画（下标＝<c>RunState.CurrentActIndex</c>）。**三处同源，不是我编的**：
+    ///     ① 皮肤定义 <c>skins/orca/&lt;皮肤&gt;/skin.json</c> 的 <c>rest.act0/act1/act2</c>；
+    ///     ② 引擎 <c>NRestSiteCharacter._Ready</c> 里写死的 switch（反编译实据）：
+    ///        <c>0 =&gt; "overgrowth_loop", 1 =&gt; "hive_loop", 2 =&gt; "glory_loop",
+    ///        _ =&gt; throw new InvalidOperationException("Unexpected act")</c>；
+    ///     ③ 角色场景自己写的是 <c>preview_animation = "-- Empty --"</c>（动画全靠代码设）。
+    ///     ⇒ 名字两边一致 ⇒ 我们换完骨架自己驱动一次也不会与引擎的
+    ///     <c>RunWhenSpineReady(... SetAnimation(animName))</c> 打架。</summary>
+    private static readonly string[] ActIdleAnimations = { "overgrowth_loop", "hive_loop", "glory_loop" };
+
+    /// <summary>
+    ///     按章节取篝火待机动画名。
+    ///     越界时**显式记日志**并退回第 0 章 —— 引擎那边是直接抛 <c>InvalidOperationException</c>，
+    ///     但我们只是换皮，不能因为章节下标不认识就把玩家的篝火界面搞崩。
+    /// </summary>
+    internal static string ActIdleAnimation(int actIndex)
+    {
+        if (actIndex >= 0 && actIndex < ActIdleAnimations.Length) return ActIdleAnimations[actIndex];
+
+        OrcaLog.Warn($"[Orca] 篝火外观：章节下标 {actIndex} 超出已知范围（0–{ActIdleAnimations.Length - 1}），按第 0 章处理", 2);
+        return ActIdleAnimations[0];
+    }
+
+    /// <summary>
     ///     把 <paramref name="skeletonPath" /> 套到这棵子树里的 SpineSprite 上，
     ///     并在换完之后**用运行时的动画 API 重新驱动动画**。
     /// </summary>
@@ -203,15 +227,26 @@ internal static class OrcaMerchantSkinPatch
 /// <summary>
 ///     篝火角色就绪时套皮肤。
 ///
-///     <para>⚠️ <b>2026-10-04：暂时【不换骨架】</b>。原因：篝火的动画是**按章节**的
-///     （皮肤定义 <c>rest.act0/act1/act2</c> = <c>overgrowth_loop</c>/<c>hive_loop</c>/<c>glory_loop</c>），
-///     而场景里写的是 <c>preview_animation = "-- Empty --"</c> ⇒ 动画由引擎代码按当前章节设。
-///     换骨架会把这个动画状态清掉，而"当前是第几章"我在这里拿不到
-///     ⇒ 硬换的结果就是**换成了奥卡但静止**（商店刚踩过同一个坑）。</para>
+///     <para>★ <b>2026-10-05 接上（用户实测：「火堆休息是战士的图」）</b>。
+///     原先这里是**空实现**，理由是"篝火动画按章节、而当前是第几章拿不到" ——
+///     <b>那条结论是错的</b>：反编译 <c>NRestSiteCharacter</c> 可见它就在 <c>_Ready</c> 里
+///     自己按章节设动画，章节从 <c>Player.RunState.CurrentActIndex</c> 取（<c>Player</c> 是公开属性）：
+///     <code>
+///     string animName = Player.RunState.CurrentActIndex switch
+///     {
+///         0 =&gt; "overgrowth_loop", 1 =&gt; "hive_loop", 2 =&gt; "glory_loop",
+///         _ =&gt; throw new InvalidOperationException("Unexpected act"),
+///     };
+///     foreach (var childSpineNode in GetChildSpineNodes())
+///         this.RunWhenSpineReady(new MegaSprite(childSpineNode),
+///             animState =&gt; animState.SetAnimation(animName));
+///     </code>
+///     ⇒ 我们照同一张表取名字（<see cref="ActIdleAnimation" />），换完骨架自己驱动一次；
+///     两边动画名一致，不会打架。</para>
 ///
-///     <para>⇒ 先按"商店验证通过的做法"把商店修对，再回来查引擎 <c>NRestSiteCharacter</c> 是按什么设章节动画的
-///     （反编译找它的 <c>PlayAnimation</c> 等价物），然后这里照抄一次。**在此之前保持不动** ——
-///     "原版铁甲战士但会动"比"奥卡但静止"更容易发现问题。</para>
+///     <para>⚠️ 骨架**异步**加载 ⇒ 本补丁在 <c>_Ready</c> 之后跑，可能还没就绪。
+///     那时 <see cref="OrcaSceneSkin.Apply" /> 会跳过并返回 0，这里**下一帧再试一次**
+///     （引擎自己的 <c>RunWhenSpineReady</c> 回调会在就绪后驱动动画，与我们同源）。</para>
 /// </summary>
 [HarmonyPatch(typeof(NRestSiteCharacter), "_Ready")]
 internal static class OrcaRestSiteSkinPatch
@@ -220,14 +255,40 @@ internal static class OrcaRestSiteSkinPatch
     {
         try
         {
-            // TODO(篝火章节动画): 查清 NRestSiteCharacter 怎么按章节驱动动画后，照抄这里的做法：
-            //   OrcaSceneSkin.Apply(__instance, OrcaSkin.RestSkeleton, <当前章节的动画名>, "篝火外观");
-            _ = __instance;
-            OrcaLog.Info("[Orca] 篝火外观：暂未换骨架（章节动画待接，见 OrcaSceneSkin.cs 注释）", 2);
+            var act = __instance.Player?.RunState?.CurrentActIndex ?? 0;
+            var applied = OrcaSceneSkin.Apply(__instance, OrcaSkin.RestSkeleton,
+                                              OrcaSceneSkin.ActIdleAnimation(act), "篝火外观");
+            if (applied > 0)
+            {
+                OrcaLog.Info($"[Orca] 篝火外观已套皮肤 → {OrcaSkin.Active}"
+                           + $"（第 {act} 章动画 {OrcaSceneSkin.ActIdleAnimation(act)}，{applied} 个 SpineSprite）", 2);
+                return;
+            }
+
+            // 骨架还没就绪 ⇒ 下一帧再试（节点可能已被释放，回调里要判有效性）
+            Callable.From(() => Retry(__instance, act)).CallDeferred();
         }
         catch (Exception ex)
         {
-            OrcaLog.Warn($"[Orca] 篝火外观检查出错（不影响篝火功能）：{ex.Message}", 2);
+            OrcaLog.Warn($"[Orca] 篝火外观套皮肤失败（不影响篝火功能）：{ex.Message}", 2);
+        }
+    }
+
+    private static void Retry(NRestSiteCharacter node, int act)
+    {
+        try
+        {
+            if (!GodotObject.IsInstanceValid(node)) return;
+
+            var applied = OrcaSceneSkin.Apply(node, OrcaSkin.RestSkeleton,
+                                              OrcaSceneSkin.ActIdleAnimation(act), "篝火外观(延迟)");
+            OrcaLog.Info(applied > 0
+                ? $"[Orca] 篝火外观已套皮肤（延迟重试成功）→ {OrcaSkin.Active}（{applied} 个 SpineSprite）"
+                : "[Orca] 篝火外观：延迟重试时 SpineSprite 仍未就绪（本次放弃，下次进篝火再套）", 2);
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 篝火外观延迟重试出错：{ex.Message}", 2);
         }
     }
 }

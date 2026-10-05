@@ -258,11 +258,22 @@ public sealed class OrcaDragonDignityPower : PowerModel
 }
 
 /// <summary>
-///     ★ 浴血涅槃（卡牌）的 Power —— 本回合内**受到致命伤害时**：
-///     消耗所有临时生命上限，回复 50%（消耗上限，向下取整）的生命。
+///     ★ 浴血涅槃（卡牌）的 Power —— **受到致命伤害时**：
+///     消耗所有临时生命上限，回复 50%（消耗上限，向下取整）的生命，**触发一次后消失**。
 ///
-///     <para>用户口径：<i>"本回合当你受到致命伤害时，消耗所有临时生命上限，
-///     回复 50% 消耗上限（具体数值向下取整）的生命"</i>；台词 <i>"杀不死我的，我会更强大！"</i></para>
+///     <para>台词 <i>"杀不死我的，我会更强大！"</i></para>
+///
+///     <para>★★ <b>2026-10-05：删掉了「回合结束到期作废」</b>（用户实测「有的时候会出现浴血打出后，
+///     buff 图标消失」）。原先有一个 <c>AfterSideTurnEnd</c> 里 <c>PowerCmd.Remove(this)</c> 的
+///     "本回合没触发 ⇒ 到期作废" —— 那是**旧口径**的遗留（下引那句用户旧话里的"本回合"），
+///     而现行三处依据都指向"整场有效、触发一次才消失"：
+///     <list type="number">
+///       <item>权威 <c>卡牌包2\卡牌说明2.txt</c>：「3费，银龙，虚无，金卡，**能力牌**，敲后2费 /
+///         当你受到致命伤害时，消耗所有临时生命上限，回复50%消耗上限…的生命」——**通篇没有"本回合"**；</item>
+///       <item>卡面 <c>ORCA_BLOOD_NIRVANA.description</c>：「…触发一次后消失。」；</item>
+///       <item>用户实测：打完一结束回合图标就没了 ⇒ 与上面两条矛盾。</item>
+///     </list>
+///     ⇒ 现在只保留 <see cref="SettleFromLethal" /> 里的「用掉即摘」，与卡面逐字一致。</para>
 ///
 ///     <para><b>怎么拦下致命伤</b>：照抄原版 <see cref="IntangiblePower" /> 的**两段式拆分**——
 ///     <list type="number">
@@ -347,7 +358,7 @@ public sealed class OrcaBloodNirvanaPower : PowerModel
             decimal pool = OrcaTempHp.Current;
             decimal used = OrcaTempHp.Consume(pool);
 
-            // ② 回复其中的 40%（向下取整）
+            // ② 回复其中的 50%（向下取整，与 HealRatio 同源；旧注释写 40% 是过期口径）
             int heal = (int)Math.Floor(used * HealRatio);
             if (heal > 0 && Owner != null)
             {
@@ -367,11 +378,8 @@ public sealed class OrcaBloodNirvanaPower : PowerModel
         }
     }
 
-    public override async Task AfterSideTurnEnd(
-        PlayerChoiceContext choiceContext, CombatSide side, IEnumerable<Creature> participants)
-    {
-        if (participants.Contains(Owner)) await PowerCmd.Remove(this);   // 本回合没触发 ⇒ 到期作废
-    }
+    // 过期策略：本 Power **不在回合结束时作废**（2026-10-05 删除，理由见类摘要）。
+    // 唯一的下场是 SettleFromLethal 里的「用掉即摘」—— 与卡面「触发一次后消失」逐字一致。
 }
 
 /// <summary>
