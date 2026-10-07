@@ -39,7 +39,15 @@ namespace OrcaCharacter;
 public sealed class Orca : CharacterModel
 {
     // ── 基础数值 ────────────────────────────────────────────
-    public override int StartingHp => 60;
+    /// <summary>
+    ///     奥卡的**初始生命上限**（唯一来源）。
+    ///     <para>★ 2026-10-07：原来这里直接写 <c>=&gt; 60;</c>，而「栖途」的**卡牌库预览**
+    ///     需要一个"没有实例时的生命上限"来算格挡（规范模型上访问 <c>Owner</c> 会抛
+    ///     <c>CanonicalModelException</c>）⇒ 抽成具名常量，两处引用同一个符号，不再各写一份 60。</para>
+    /// </summary>
+    internal const int StartingMaxHp = 60;
+
+    public override int StartingHp => StartingMaxHp;
     public override int StartingGold => 99;
     public override CharacterGender Gender => (CharacterGender)1;   // 女
 

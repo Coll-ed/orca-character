@@ -1,4 +1,4 @@
-[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcaextraturnpowerweddingspr"
+[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcaextraturnpowerweddingspr"]
 
 [ext_resource type="Texture2D" uid="uid://corcaextraturnpowerwedding" path="res://images/powers/orca_extra_turn_power_wedding.png" id="1_orca"]
 

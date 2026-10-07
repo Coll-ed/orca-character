@@ -55,6 +55,15 @@ public sealed class OrcaHomestead : OrcaCard
     /// <summary>百分数 ↔ 比例的分母（100 这个"百分数"单位本身的定义；唯一换算点用）。</summary>
     private const int PercentBase = 100;
 
+    /// <summary>
+    ///     卡牌库（规范模型）里预览用的生命上限 —— <b>引用奥卡的初始生命上限</b>（单一来源：
+    ///     <see cref="Orca.StartingMaxHp" />），不在这里另写一个 60。
+    ///     <para>为什么库里要退化成这个值：规范模型上没有 <c>Owner</c>（碰了会抛守卫异常），
+    ///     而卡面又必须有个数字 ⇒ 用"开局那一刻的真实值"预览，比显示 0 有用得多；
+    ///     真正在局内看牌时是**实例模型**（有 Owner）⇒ 显示的是此刻的真实数值。</para>
+    /// </summary>
+    private const int PreviewMaxHpWhenCanonical = Orca.StartingMaxHp;
+
     /// <summary>敲后的费用减少量（3 → 2）。</summary>
     private const int UpgradeCostStep = 1;
 
@@ -68,14 +77,36 @@ public sealed class OrcaHomestead : OrcaCard
     /// <summary>
     ///     此刻会拿到的格挡 = <c>floor(当前最大生命 × 50%)</c>。
     ///
-    ///     <para>取不到生物时（百科 / 牌库浏览 / 尚未挂载 Owner）返回 0 —— 那时没有 Owner，
-    ///     属正常情况而非错误（与龙剑/魔剑卡面数字同一套写法）。</para>
+    ///     <para>★ 两种情况会退化成"按初始生命上限预览"（都**不静默**、各有注释）：
+    ///     ① <b>卡牌库 / 百科</b>渲染的是规范模型（没有 Owner）；
+    ///     ② 有实例但取不到生物（极端时序）。</para>
     /// </summary>
     private int BlockValue()
     {
+        // ★★ 2026-10-07 实机日志实锤：**卡牌库 / 百科**渲染的是**规范模型**（IsCanonical），
+        //    在规范模型上访问 Owner 会抛 CanonicalModelException ⇒ 卡面构造失败 ⇒
+        //    引擎把整条说明换成兜底文案「If you can read this, there is a bug.」（用户截图 + 日志
+        //    `at OrcaCharacter.OrcaHomestead.BlockValue() ... AddExtraArgsToDescription`）。
+        //    ⇒ 照**引擎自己的写法**先判 IsMutable（实据：Fasten.cs:22 / Shiv.cs:45 /
+        //      SovereignBlade.cs:109 三处都是 `if (base.IsMutable && base.Owner != null)`）。
+        if (!IsMutable) return BlockValueOf(PreviewMaxHpWhenCanonical);
+
         var me = Owner?.Creature;
-        return me == null ? 0 : (int)Math.Floor(me.MaxHp * BlockPercent / (double)PercentBase);
+        if (me == null)
+        {
+            OrcaLog.Info($"[Orca] 栖途·卡面预览：取不到生物 ⇒ 按初始生命上限 {PreviewMaxHpWhenCanonical} 预览", 2);
+            return BlockValueOf(PreviewMaxHpWhenCanonical);
+        }
+
+        return BlockValueOf(me.MaxHp);
     }
+
+    /// <summary>
+    ///     按给定的生命上限算格挡（**唯一算式** —— 真实预览、库里预览共用；全程 decimal，
+    ///     免得 int / double 混算导致精度或编译问题）。
+    /// </summary>
+    private static int BlockValueOf(decimal maxHp)
+        => (int)Math.Floor(maxHp * BlockPercent / (decimal)PercentBase);
 
     /// <summary>
     ///     卡面数字：<c>{BlockPercent}</c>（比例）与 <c>{Block}</c>（此刻的具体数值）。

@@ -1,4 +1,4 @@
-[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcahomesteadpowerspr"
+[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcahomesteadpowerspr"]
 
 [ext_resource type="Texture2D" uid="uid://corcahomesteadpower" path="res://images/powers/orca_homestead_power.png" id="1_orca"]
 

@@ -1,4 +1,4 @@
-[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcadragondignitypowerspr"
+[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcadragondignitypowerspr"]
 
 [ext_resource type="Texture2D" uid="uid://corcadragondignitypower" path="res://images/powers/orca_dragon_dignity_power.png" id="1_orca"]
 

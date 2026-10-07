@@ -46,14 +46,27 @@ internal sealed class OrcaCardKeyword
     private readonly string _prefix;
     private readonly string _fallbackTitle;
     private readonly string _fallbackDesc;
+    private readonly Action<LocString>? _inject;
     private string? _title;
     private string? _desc;
 
-    internal OrcaCardKeyword(string prefix, string fallbackTitle, string fallbackDesc)
+    /// <param name="prefix">关键词前缀（本地化键与 Power 名的中段）。</param>
+    /// <param name="fallbackTitle">两处本地化都取不到时的兜底标题。</param>
+    /// <param name="fallbackDesc">两处本地化都取不到时的兜底说明。</param>
+    /// <param name="inject">
+    ///     ★ 2026-10-07 新增：**格式化前**给文案补变量（见 <see cref="OrcaHoverVars" />）。
+    ///     走 <c>powers/ORCA_&lt;X&gt;_POWER</c> 的那条链拿到的文案可能带 <c>{占位符}</c>
+    ///     （例如栖途的 <c>{RegenPerTrigger}</c>），而这条链不经过 <c>PowerModel.Description</c>
+    ///     ⇒ 不在这里补就会把字面量显示给玩家（实机日志实锤）。
+    ///     不需要变量的关键词传 <c>null</c>（默认）。
+    /// </param>
+    internal OrcaCardKeyword(string prefix, string fallbackTitle, string fallbackDesc,
+        Action<LocString>? inject = null)
     {
         _prefix = prefix;
         _fallbackTitle = fallbackTitle;
         _fallbackDesc = fallbackDesc;
+        _inject = inject;
     }
 
     /// <summary>关键词标题（"吸血"）—— 也是"卡面文案里出现它 ⇒ 该挂这条浮窗"的匹配串。</summary>
@@ -95,7 +108,32 @@ internal sealed class OrcaCardKeyword
                 var loc = LocString.GetIfExists(table, entry);
                 if (loc != null && !loc.IsEmpty)
                 {
+                    // ★★ 2026-10-07：**先补变量、再格式化**。buff 自己那份文案可能带占位符
+                    //    （栖途的 {RegenPerTrigger}/{MaxHpPerRegen}、浴血涅槃的 {BasePercent}…），
+                    //    而本链**不经过** PowerModel.Description 的那套注入 ⇒ 不补就会报
+                    //    "No source extension could handle the selector named …"，
+                    //    并把字面量 {RegenPerTrigger} 显示给玩家（2026-10-07 实机日志实锤）。
+                    //    注入实现与 buff 图标那条路径**共用** OrcaHoverVars（单一来源）。
+                    try
+                    {
+                        _inject?.Invoke(loc);
+                    }
+                    catch (Exception ex)
+                    {
+                        OrcaLog.Warn($"[Orca] 关键词文案 {table}/{entry} 变量注入失败：{ex.Message}", 2);
+                    }
+
                     var text = loc.GetFormattedText();
+
+                    // ★ 安全网：格式化后**仍带占位符** = 某个 {Var} 没人注入 ⇒ 宁可退回兜底串，
+                    //   也绝不把 {xxx} 裸露给玩家（与类摘要"绝不显示成裸键名"同一条纪律）。
+                    if (text.Contains('{'))
+                    {
+                        OrcaLog.Warn($"[Orca] 关键词文案 {table}/{entry} 格式化后仍含未替换的占位符"
+                                   + $" ⇒ 改用兜底串。原文：{text}", 2);
+                        continue;
+                    }
+
                     if (!string.IsNullOrWhiteSpace(text) && text != entry) return text;
                 }
             }
@@ -161,10 +199,13 @@ internal static class OrcaKeyword
     internal static readonly OrcaCardKeyword Soar = new(
         "SOAR", "翱翔", "受到的伤害减半；每受到一次未格挡的伤害减少一层。");
 
-    /// <summary>「生死一线」（熔渊枯骨）。</summary>
+    /// <summary>
+    ///     「生死一线」（熔渊枯骨）。
+    ///     ★ 2026-10-07 按新权威改：兜底串也必须与新规则一致（旧串写的是"只消耗一半层数"✗）。
+    /// </summary>
     internal static readonly OrcaCardKeyword MoltenBone = new(
         "MOLTEN_BONE", "生死一线",
-        "你造成的焚烧每次触发只消耗一半层数，且改为对场上所有人（包括你自己）造成伤害。");
+        "你附加焚烧时的即时触发失效；每次焚烧结算改为对场上所有人（包括你自己）造成伤害，且层数不再消耗（烧起来就不会灭）。");
 
     /// <summary>「额外回合」（逆鳞）。</summary>
     internal static readonly OrcaCardKeyword ExtraTurn = new(
@@ -174,17 +215,40 @@ internal static class OrcaKeyword
     internal static readonly OrcaCardKeyword EmberWing = new(
         "EMBER_WING", "烬血之翼", "翱翔将在你的下个回合开始时消失（记号）。");
 
-    /// <summary>「栖途」。</summary>
+    /// <summary>
+    ///     「栖途」。
+    ///     ★ 兜底串里的两个数字直接引用 Power 的常量（**单一来源**，不写死 1）；
+    ///     正文优先走 <c>powers/ORCA_HOMESTEAD_POWER.description</c>（带同名占位符 ⇒ 由
+    ///     <see cref="OrcaHoverVars.Homestead" /> 在格式化前补上）。
+    /// </summary>
     internal static readonly OrcaCardKeyword Homestead = new(
-        "HOMESTEAD", "栖途", "战斗结束后，将你的一部分战斗临时生命上限转化为真实生命上限（比例随卡牌升级提高）。");
+        "HOMESTEAD", "栖途",
+        $"在没有受到敌人伤害（烧血自残不算）的情况下触发银龙血统时，获得 {OrcaHomesteadPower.RegenPerTrigger} 层再生；"
+        + $"战斗结束后按累计获得的层数转化为真实生命上限（每层 {OrcaHomesteadPower.MaxHpPerRegen} 点）。",
+        OrcaHoverVars.Homestead);
 
-    /// <summary>「归墟」。</summary>
+    /// <summary>
+    ///     「归墟」。
+    ///     ★ 兜底串里的比例直接引用 Power 的两个百分点常量（**单一来源**）。
+    ///     ⚠️ 这条**不注册注入器**：<c>ORCA_VOID_RETURN_POWER.description</c> 里的 <c>{Ratio}</c> 是
+    ///     **实例值**（敲后 75%），关键词浮窗手上没有 Power 实例 ⇒ 靠下面 Resolve 的安全网
+    ///     退回这条同时写明两个值的兜底串（比显示裸 <c>{Ratio}</c> 正确）。
+    /// </summary>
     internal static readonly OrcaCardKeyword VoidReturn = new(
-        "VOID_RETURN", "归墟", "场上所有角色无法回复生命；被阻止的回复按 50% 转入嗜血龙剑的伤害附加。");
+        "VOID_RETURN", "归墟",
+        $"场上所有角色无法回复生命（吸血不受影响）；被阻止的回复按 {OrcaVoidReturnPower.BasePercent}%"
+        + $"（敲后 {OrcaVoidReturnPower.UpgradedPercent}%）转入嗜血魔剑的伤害附加。");
 
-    /// <summary>「浴血涅槃」。</summary>
+    /// <summary>
+    ///     「浴血涅槃」。
+    ///     ★ 兜底串同样引用 Power 常量；正文走 powers 表（两个占位符由
+    ///     <see cref="OrcaHoverVars.BloodNirvana" /> 补上 —— 说明见那边的注释）。
+    /// </summary>
     internal static readonly OrcaCardKeyword BloodNirvana = new(
-        "BLOOD_NIRVANA", "浴血涅槃", "当你受到致命伤害时，消耗所有战斗临时生命上限，并回复其中 50% 的生命（触发一次后消失）。");
+        "BLOOD_NIRVANA", "浴血涅槃",
+        $"当你受到致命伤害时，消耗所有战斗临时生命上限，并回复其中 {OrcaBloodNirvanaPower.BasePercent}% 的生命"
+        + $"（敲后 {OrcaBloodNirvanaPower.UpgradedPercent}%）（触发一次后消失）。",
+        OrcaHoverVars.BloodNirvana);
 
     /// <summary>
     ///     「睥睨」（2026-10-04 随该卡重写新增）—— 卡面写 <c>[gold]睥睨[/gold]</c>，

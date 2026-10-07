@@ -227,7 +227,7 @@ public sealed class OrcaBloodline : RelicModel
             var homestead = me.GetPower<OrcaHomesteadPower>();
             if (homestead != null)
             {
-                await homestead.NoteBloodlineTrigger(me, fromEnemy, lost);
+                await homestead.NoteBloodlineTrigger(me, fromEnemy, $"掉血 {lost}");
             }
         }
         catch (Exception ex)
@@ -349,6 +349,21 @@ public sealed class OrcaBloodline : RelicModel
                 TriggerFx($"回合回血 {heal} 点"
                           + $"{(_hitByEnemyThisTurn ? "（挨打·基础）" : "（无伤·翻倍）")}"
                           + $"（{me.CurrentHp}/{me.MaxHp}）");
+
+                // ★★ 2026-10-07【栖途】的**第二个触发点**（用户口径："没有受到敌人伤害，
+                //    用格挡触发银龙回血也是有再生的"）：
+                //    回合回血本身就是【银龙血统】的一次触发 ⇒ 只要上一回合**没有真的挨打**
+                //    （判据就是这里现成的 _hitByEnemyThisTurn —— 它只认"真漏了生命"的攻击，
+                //      被完全格挡 ⇒ 不算挨打 ⇒ 走"无伤·翻倍"这一支）就给 1 层【再生】。
+                //    挨打那一支（只回基础那份）**不给**（权威：在没有受到敌人伤害的情况下）。
+                if (!_hitByEnemyThisTurn)
+                {
+                    var homestead = me.GetPower<OrcaHomesteadPower>();
+                    if (homestead != null)
+                    {
+                        await homestead.NoteBloodlineTrigger(me, fromEnemy: false, why: "回合回血（上回合无伤）");
+                    }
+                }
             }
 
             _hitByEnemyThisTurn = false;      // 新回合重新计数

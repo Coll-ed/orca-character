@@ -1,4 +1,4 @@
-[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcacrimsontemperpowerspr"
+[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcacrimsontemperpowerspr"]
 
 [ext_resource type="Texture2D" uid="uid://corcacrimsontemperpower" path="res://images/powers/orca_crimson_temper_power.png" id="1_orca"]
 

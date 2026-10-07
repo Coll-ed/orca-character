@@ -1,4 +1,4 @@
-[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcaextraturnpowerspr"
+[gd_resource type="AtlasTexture" load_steps=2 format=3 uid="uid://corcaextraturnpowerspr"]
 
 [ext_resource type="Texture2D" uid="uid://corcaextraturnpower" path="res://images/powers/orca_extra_turn_power.png" id="1_orca"]
 

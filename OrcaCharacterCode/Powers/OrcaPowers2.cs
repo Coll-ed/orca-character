@@ -258,30 +258,22 @@ public sealed class OrcaBloodNirvanaPower : PowerModel
     public override PowerType Type => PowerType.Buff;
 
     /// <summary>
-    ///     ★★ <b>浮窗里的百分比跟随本实例的比例</b>（A7 同一套路、同一处反编译实据）：
-    ///     <c>PowerModel.HoverTips</c> 组装 buff 浮窗时**不会**调 <c>AddExtraArgsToDescription</c>
-    ///     （那是 <c>CardModel</c> 独有的钩子，<c>PowerModel</c> 上没有这个方法）⇒
-    ///     带格式化器的占位符只能在 <c>Description</c> 的取值处注入，
-    ///     否则 <c>powers.json</c> 里那个 <c>{HealPercent}</c> 会**裸露**在玩家眼前（不是报错，是显示字面量）。
-    ///     ★ 与卡面同源：两者都读本实例的比例（<see cref="HealRatio" />）⇒ 改常量两处一起变。
+    ///     ★★ <b>浮窗里的两个百分比</b>（未敲 / 敲后）由 <see cref="OrcaHoverVars.BloodNirvana" />
+    ///     注入 —— 与**关键词浮窗**共用同一个实现（那条链不经过本类，见该类的类摘要）。
+    ///
+    ///     <para>为什么文案写"两个百分比"而不是"本实例的比例"：关键词浮窗手上没有 Power 实例，
+    ///     若写 <c>{HealPercent}</c> 它只能瞎猜 ✗。玩家自己那张牌的**实际数值**由**卡面**给
+    ///     （卡面走 <c>CardModel.AddExtraArgsToDescription</c>，能按 <c>IsUpgraded</c> 现算 ✓）。
+    ///     反编译实据（为什么必须覆写这里）：<c>PowerModel.HoverTips</c> 只调
+    ///     <c>AddDumbVariablesToDescription</c>（Amount / singleStarIcon / energyPrefix），
+    ///     而 <c>AddExtraArgsToDescription</c> 只存在于 <c>CardModel</c> ⇒ Power 侧没有别的注入点。</para>
     /// </summary>
     public override LocString Description
     {
         get
         {
             var loc = base.Description;
-            try
-            {
-                if (loc.GetRawText().Contains("{HealPercent}"))
-                {
-                    loc.Add("HealPercent", (decimal)PercentFromRatio(HealRatio));
-                }
-            }
-            catch (Exception ex)
-            {
-                // 拿不到原文（表未加载等）⇒ 记日志后放行（与归墟同一处理：宁可退化成"可能裸露"，也不让浮窗构造失败）
-                OrcaLog.Warn($"[Orca] 浴血涅槃：读取浮窗文案原文失败，HealPercent 未注入：{ex.Message}");
-            }
+            OrcaHoverVars.BloodNirvana(loc);   // 内部自带边界处理与告警，注入失败不抛
             return loc;
         }
     }
@@ -627,29 +619,34 @@ public sealed class OrcaHomesteadPower : PowerModel
     public override int DisplayAmount => Triggers;
 
     /// <summary>
-    ///     ★★ <b>【银龙血统】刚刚为"掉血"触发了一次</b> —— 由遗物 <see cref="OrcaBloodline" />
-    ///     在"当前生命下降"钩子里调用（只有那里知道这一下掉血是不是敌人打的）。
+    ///     ★★ <b>【银龙血统】刚刚触发了一次</b> —— 由遗物 <see cref="OrcaBloodline" /> 在**两个触发点**调用：
+    ///     ① 当前生命下降（掉血转临时上限，那里才知道这一下掉血是不是敌人打的）；
+    ///     ② 回合开始的回血（**无伤那一支**才算；挨打那一支不给，理由见下）。
     ///
     ///     <para>权威 L46：<i>"在没有受到敌人伤害（烧血自残不算）的情况下触发【银龙血统】时，
-    ///     获得1层再生"</i> ⇒ <paramref name="fromEnemy" /> 为真（这次掉血来自敌人）时**不发**；
-    ///     自残（卖血）触发时发 <see cref="RegenPerTrigger" /> 层。</para>
+    ///     获得1层再生"</i> ⇒ 本方法只在"这一次触发不属于敌人伤害"时发放；<paramref name="fromEnemy" />
+    ///     为真（敌人打出来的掉血）时**不发**。</para>
     ///
-    ///     <para>★ <b>为什么用 <c>ThrowingPlayerChoiceContext</c></b>：遗物的
-    ///     <c>AfterCurrentHpChanged(Creature, decimal)</c> 签名里**没有** choice context，
-    ///     而施加 Power 必须走 <c>PowerCmd.Apply</c>。引擎自己的同类场景就是这么写的
+    ///     <para>★ <b>2026-10-07 用户补充口径</b>：<i>"没有受到敌人伤害，用格挡触发银龙回血也是有再生的"</i>
+    ///     ⇒ ②（回合回血）也要发 —— 遗物那边用的判据是**现成的** <c>_hitByEnemyThisTurn</c>
+    ///     （它只认"真正漏掉生命"的攻击：被完全格挡 ⇒ 不算挨打 ⇒ 走"无伤·翻倍"那一支）✓
+    ///     所以"格挡挡下敌人 → 回合回血 → +1 再生"这条链天然成立，无需另写判定。</para>
+    ///
+    ///     <para>★ <b>为什么用 <c>ThrowingPlayerChoiceContext</c></b>：遗物的钩子签名里**没有**
+    ///     choice context，而施加 Power 必须走 <c>PowerCmd.Apply</c>。引擎自己的同类场景就是这么写的
     ///     （实据：<c>PowerCmd.Decrement</c> 内部就是 <c>new ThrowingPlayerChoiceContext()</c>，
     ///     <c>PowerCmd.cs:185-188</c>）—— 这条路径上不可能发生玩家选择，所以"抛异常的上下文"是安全的。</para>
     /// </summary>
     /// <param name="me">奥卡的生物（= 本 Power 的 Owner）。</param>
-    /// <param name="fromEnemy">这一下掉血是否由敌人造成（自残 = <c>false</c>）。</param>
-    /// <param name="lost">这一下掉的血量（仅用于日志）。</param>
-    internal async Task NoteBloodlineTrigger(Creature me, bool fromEnemy, int lost)
+    /// <param name="fromEnemy">这一次触发是否由敌人伤害造成（自残 / 无伤回血 = <c>false</c>）。</param>
+    /// <param name="why">触发原因的**人类可读说明**（只进日志，不参与判定）。</param>
+    internal async Task NoteBloodlineTrigger(Creature me, bool fromEnemy, string why)
     {
         try
         {
             if (fromEnemy)
             {
-                OrcaLog.Info($"[Orca] 栖途：这次【银龙血统】是**敌人打的**（掉血 {lost}）"
+                OrcaLog.Info($"[Orca] 栖途：这次【银龙血统】是**敌人打的**（{why}）"
                            + " ⇒ 不发【再生】（权威：在没有受到敌人伤害、烧血自残不算，的情况下才发）", 2);
                 return;
             }
@@ -658,7 +655,7 @@ public sealed class OrcaHomesteadPower : PowerModel
             await PowerCmd.Apply<OrcaHomesteadPower>(ctx, me, RegenPerTrigger, me, null);
             await PowerCmd.Apply<RegenPower>(ctx, me, RegenPerTrigger, me, null);
 
-            OrcaLog.Info($"[Orca] 栖途：自残触发【银龙血统】（掉血 {lost}）⇒ +{RegenPerTrigger} 层【再生】"
+            OrcaLog.Info($"[Orca] 栖途：触发【银龙血统】（{why}）⇒ +{RegenPerTrigger} 层【再生】"
                        + $"（本场累计触发 {Triggers} 次 ⇒ 战后可转化 {Triggers * MaxHpPerRegen} 点生命上限）", 2);
         }
         catch (Exception ex)
@@ -668,33 +665,20 @@ public sealed class OrcaHomesteadPower : PowerModel
     }
 
     /// <summary>
-    ///     ★★ <b>浮窗里的两个数字由本类的常量注入</b>（A7 同一套路）：
-    ///     <c>PowerModel.HoverTips</c> 不调 <c>AddExtraArgsToDescription</c> ⇒ 占位符只能在
-    ///     <c>Description</c> 取值处补，否则 <c>powers.json</c> 里的 <c>{RegenPerTrigger}</c> /
-    ///     <c>{MaxHpPerRegen}</c> 会裸露成字面量。
-    ///     ★ 与卡面同源：两处都读本类的这两个常量（单一来源，改常量即两处同步）。
+    ///     ★★ <b>浮窗里的两个数字</b>由 <see cref="OrcaHoverVars.Homestead" /> 注入（每次触发给几层、
+    ///     每层换几点生命上限）—— 与**关键词浮窗**共用同一个实现（那条链不经过本类，见该类类摘要）；
+    ///     数值全部取自本类的具名常量，文案里不写死。
+    ///
+    ///     <para>反编译实据（为什么必须覆写这里）：<c>PowerModel.HoverTips</c> 只调
+    ///     <c>AddDumbVariablesToDescription</c>，<c>AddExtraArgsToDescription</c> 只存在于
+    ///     <c>CardModel</c> ⇒ Power 侧没有别的注入点，缺注入就会把 <c>{RegenPerTrigger}</c> 裸露给玩家。</para>
     /// </summary>
     public override LocString Description
     {
         get
         {
             var loc = base.Description;
-            try
-            {
-                var raw = loc.GetRawText();
-                if (raw.Contains("{RegenPerTrigger}"))
-                {
-                    loc.Add("RegenPerTrigger", (decimal)RegenPerTrigger);
-                }
-                if (raw.Contains("{MaxHpPerRegen}"))
-                {
-                    loc.Add("MaxHpPerRegen", (decimal)MaxHpPerRegen);
-                }
-            }
-            catch (Exception ex)
-            {
-                OrcaLog.Warn($"[Orca] 栖途：读取浮窗文案原文失败，占位符未注入：{ex.Message}");
-            }
+            OrcaHoverVars.Homestead(loc);   // 内部自带边界处理与告警，注入失败不抛
             return loc;
         }
     }
