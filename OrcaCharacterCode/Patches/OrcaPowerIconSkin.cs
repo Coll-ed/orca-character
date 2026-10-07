@@ -41,6 +41,14 @@ internal static class OrcaPowerIconSkinPatch
     /// </summary>
     private const string OrcaSoarPowerId = "orca_soar_power";
 
+    /// <summary>
+    ///     ★ 2026-10-07 新增：「睥睨」(<see cref="OrcaOverlookPower" />) 的 Id（小写形态）。
+    ///     小图标已按 Id 约定补好了 <c>orca_overlook_power[_wedding].tres</c>（图集精灵），
+    ///     但**大图标**是按 Id 找 <c>images/powers/&lt;id&gt;.png</c> —— 那个文件本工程做不出来
+    ///     （新 PNG 必须经 Godot 编辑器重导成 <c>.ctex</c>，本机没有编辑器）⇒ 见文件末尾的改道 patch。
+    /// </summary>
+    internal const string OrcaOverlookPowerId = "orca_overlook_power";
+
     /// <summary>原版翱翔的图标路径（游戏本体 pck 内，已实测存在）。</summary>
     private static string OrcaSoarPowerIconPath =>
         ImageHelper.GetImagePath("atlases/power_atlas.sprites/soar_power.tres");
@@ -86,6 +94,53 @@ internal static class OrcaPowerIconSkinPatch
         catch
         {
             return false;
+        }
+    }
+}
+
+/// <summary>
+///     ★★ <b>2026-10-07 新增：睥睨（<see cref="OrcaOverlookPower" />）的大图标改道</b>。
+///
+///     <para><b>为什么缺</b>（反编译实据 <c>PowerModel.cs:104-138</c>）：
+///     <list type="bullet">
+///       <item>小图标 = <c>PackedIconPath</c>，按 Id 找 <c>atlases/power_atlas.sprites/&lt;id&gt;.tres</c>
+///         —— 本轮已补好 <c>orca_overlook_power[_wedding].tres</c> ✓；</item>
+///       <item>大图标 = <c>BigIconPath</c>（<b>private</b>），按 Id 找 <c>images/powers/&lt;id&gt;.png</c>；
+///         找不到再找 <c>powers/beta/&lt;id&gt;.png</c>；都找不到则退回引擎自带的
+///         <c>powers/missing_power.png</c>（通用占位图）。</item>
+///     </list>
+///     而 <b>本工程做不出新的 PNG</b>：包里的纹理只认已导入的 <c>.ctex</c>，
+///     新 PNG 必须经 Godot 编辑器重导（本机没有编辑器）⇒ 让睥睨改道去用**已经导好**的
+///     杀意图标 <c>orca_killing_intent_power.png</c>：语义正好一致 ——
+///     当初那套三件套（杀意/智慧/血统）**就是睥睨的旧实现**，效果同为「使打出的牌额外打出一次」。</para>
+///
+///     <para>★ <b>为什么这条 patch 是安全的</b>：<c>ResolvedBigIconPath</c> 是
+///     <b>public</b> 取值器（<c>PowerModel.cs:118</c>，与 private 的 <c>BigIconPath</c> 不同）
+///     ⇒ 挂 Prefix 不依赖私有签名；且任何异常都 <c>return true</c> 放行原逻辑、
+///     只记一条 Warn（不静默），绝不会把 buff 栏弄坏。</para>
+/// </summary>
+[HarmonyPatch(typeof(PowerModel), "get_ResolvedBigIconPath")]
+internal static class OrcaPowerBigIconPatch
+{
+    /// <summary>睥睨借用的那张图（已导入，路径与 <c>orca_overlook_power.tres</c> 里引用的同一份）。</summary>
+    private static string OverlookBigIconPath =>
+        ImageHelper.GetImagePath("powers/orca_killing_intent_power.png");
+
+    private static bool Prefix(PowerModel __instance, ref string __result)
+    {
+        try
+        {
+            var id = __instance?.Id.Entry.ToLowerInvariant();
+            if (id != OrcaPowerIconSkinPatch.OrcaOverlookPowerId) return true;
+
+            __result = OverlookBigIconPath;
+            return false;
+        }
+        catch (System.Exception ex)
+        {
+            // 不静默：改道失败只会让大图标退回引擎的通用占位图，但根因要可查
+            OrcaLog.Warn($"[Orca] 睥睨大图标改道失败（退回引擎占位图）：{ex.Message}");
+            return true;
         }
     }
 }
