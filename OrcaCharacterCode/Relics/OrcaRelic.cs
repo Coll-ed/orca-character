@@ -80,6 +80,25 @@ public sealed class OrcaBloodline : RelicModel
     private decimal _combatBaseMaxHp;
 
     /// <summary>
+    ///     ★★ <b>2026-10-07 新增：本局"真实赚到的生命上限"账本</b> —— 只有**真实增益**会记这里
+    ///     （击杀奖励、栖途转化…），每笔都由 <see cref="AdvanceCombatBase" /> 同步。
+    ///
+    ///     <para><b>为什么要它</b>：实机日志实锤——战斗1收尾明明把上限写回 62，
+    ///     战斗2开局生物上限却是 **68**（多出来的 6 正好等于上一场第一笔临时上限"掉血 12 → +6"）
+    ///     ⇒ 引擎会把我们为了"临时上限"写的 <c>SetMaxHp</c> 吞进持久值。
+    ///     只靠"收尾绝对写回"救不回来（那一步在引擎写回**之后**才生效）⇒ 开局必须按**账本**校正。</para>
+    /// </summary>
+    private decimal _earnedRealMaxHp;
+
+    /// <summary>
+    ///     ★★ 上一场战斗里"临时上限贴到过的峰值"（= <see cref="OrcaTempHp" /> 的峰值）。
+    ///     <para>只用于开局校正的判据：观测到的超账本增量**不超过这个峰值**时，
+    ///     判为"引擎把临时上限写进了持久值"⇒ 按账本扣回（不认这笔）。
+    ///     超过峰值则认作**别的来源给的**真实增益（不会误删别人的收益）。</para>
+    /// </summary>
+    private decimal _lastBattleTempPeak;
+
+    /// <summary>
     ///     ★ 重入闸门（审查发现的真实缺陷）：我们自己在钩子里调 <c>SetMaxHp</c> 会**再次**引发
     ///     "当前生命变化"（降上限时会截断当前生命）⇒ 二次触发本钩子 ⇒ 反复加血上限。
     ///     战斗结束还原上限那一步尤其危险。所以自己的操作期间屏蔽钩子。
@@ -211,6 +230,7 @@ public sealed class OrcaBloodline : RelicModel
             }
 
             OrcaTempHp.Add(applied);
+            _lastBattleTempPeak = Math.Max(_lastBattleTempPeak, TempMaxHp);   // ★ 记峰值（开局校正要用）
             TriggerFx($"掉血 {lost} → 本场临时血上限 +{applied}（累计 +{TempMaxHp}，当前上限 {me.MaxHp}）");
 
             // ★ 受伤台词（用户 2026-09-17："受伤……都会额外说话"）
@@ -301,8 +321,40 @@ public sealed class OrcaBloodline : RelicModel
             var self = Owner.Creature;
             if (_combatBaseMaxHp <= 0)
             {
-                _combatBaseMaxHp = self.MaxHp;
-                OrcaLog.Info($"[Orca] 银龙血统：本场基准生命上限 = {_combatBaseMaxHp}", 2);
+                decimal observed = self.MaxHp;
+                decimal expected = Orca.StartingMaxHp + _earnedRealMaxHp;
+                decimal drift = observed - expected;
+
+                // ★★ 2026-10-07 修「临时上限被引擎写进持久值」（用户实机：4 个怪却多了 14 点上限）。
+                //    引擎侧实据：CreatureCmd.SetMaxHp 只调 creature.SetMaxHpInternal
+                //    （CreatureCmd.cs:895-905），全工程**没有任何"上限变化"钩子**（AfterMaxHp* 零命中）
+                //    ⇒ 无法从钩子侧拦；只能在每场开局**按自己的账本**判断并扣回。
+                if (drift > 0 && drift <= _lastBattleTempPeak)
+                {
+                    OrcaLog.Warn($"[Orca] 银龙血统：本场开局上限 {observed} 比账本 {expected} 多 {drift}"
+                               + $"（≤ 上场临时峰值 {_lastBattleTempPeak}）"
+                               + " ⇒ 判为引擎把临时上限写进了持久值，按账本扣回");
+                    _applying = true;
+                    try { await CreatureCmd.SetMaxHp(self, expected); }
+                    finally { _applying = false; }
+                    observed = self.MaxHp;
+                }
+                else if (drift > 0)
+                {
+                    OrcaLog.Info($"[Orca] 银龙血统：开局上限 {observed} 比账本 {expected} 多 {drift}"
+                               + $"（> 上场临时峰值 {_lastBattleTempPeak}）⇒ 认作**别的来源**给的真实增益，并入账本", 2);
+                }
+                else if (drift < 0)
+                {
+                    OrcaLog.Warn($"[Orca] 银龙血统：开局上限 {observed} 比账本 {expected} 少 {-drift}"
+                               + " ⇒ 按观测值记基准（不凭空补，避免与别处的上限改动打架）");
+                }
+
+                _combatBaseMaxHp = observed;
+                _earnedRealMaxHp = observed - Orca.StartingMaxHp;   // 账本与观测对齐（单一来源）
+                _lastBattleTempPeak = 0;                            // 峰值只服务"上一场 → 本场"这一次判断
+                OrcaLog.Info($"[Orca] 银龙血统：本场基准生命上限 = {_combatBaseMaxHp}"
+                           + $"（账本 = 初始 {Orca.StartingMaxHp} + 真实增益 {_earnedRealMaxHp}）", 2);
             }
 
             decimal want = _combatBaseMaxHp + TempMaxHp;
@@ -441,6 +493,8 @@ public sealed class OrcaBloodline : RelicModel
             }
 
             OrcaTempHp.Reset();
+            // ★ 峰值要留到**下一场开局**用（本轮修的那笔"临时上限被写进持久值"就靠它判）⇒ 先记后清。
+            _lastBattleTempPeak = Math.Max(_lastBattleTempPeak, pool);
             _combatBaseMaxHp = 0;           // ★ 下场战斗重新记基准
             _hitByEnemyThisTurn = false;
             _spokeCombatStart = false;      // ★ 下场战斗重新说开场白
@@ -484,6 +538,10 @@ public sealed class OrcaBloodline : RelicModel
     internal void AdvanceCombatBase(decimal gain)
     {
         if (gain <= 0) return;                  // 没赚到就不动账（边界显式；不打日志，避免每击一次刷屏）
+
+        // ★ 2026-10-07：先记进"真实增益账本" —— 即使下面因为"基准未记录"而不动基准，
+        //    账本也必须反映这笔（下一场开局的校正要用它当**期望值**）。
+        _earnedRealMaxHp += gain;
 
         // ★★ 本场基准还没记过 = 战斗**尚未开始**或**已经结束**（`_combatBaseMaxHp` 已在 AfterCombatEnd 里归零）。
         //    这两种情况都**不许凭空造基准**：
