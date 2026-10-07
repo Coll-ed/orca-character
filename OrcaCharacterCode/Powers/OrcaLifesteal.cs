@@ -45,20 +45,27 @@ namespace OrcaCharacter;
 public sealed class OrcaLifestealPower : PowerModel
 {
     /// <summary>
-    ///     转化比例（25%）—— **一般攻击牌**用这一档，**向下取整、最低 1 点**。
-    ///     文案里的数字由它派生，改一处两处都变。
+    ///     转化比例（★ 2026-10-07 由 25% 改为 **20%**）—— **一般攻击牌**用这一档，
+    ///     **向下取整、最低 1 点**，且**同样 × 当前层数**（本轮新增）。
+    ///
+    ///     <para><b>权威</b>（<c>work/奥卡卡包集/备注.txt</c> L9-12，2026-10-07 20:25 改版）：
+    ///     <i>"吸血：可叠加，普通攻击牌按照20%*层数计算，不消耗"</i>
+    ///     ⇒ 比例 20%、吃层数、**不消耗层数**。文案里的数字由它派生，改一处两处都变。</para>
     /// </summary>
-    public const int Percent = 25;
+    public const int Percent = 20;
 
     /// <summary>
-    ///     ★★ **龙剑类型**打出时的倍率（50%）—— **向上取整**，且**一口气结清全部层数**。
-    ///     用户口径 2026-09-23：「在魔剑打出的吸血倍率是 50%（向上取整）」
-    ///     + 「吸血是只有被**龙剑类型**的伤害卡牌打出才会**消耗**并获得**额外倍率**」。
-    ///     ★ 2026-10-06 用户裁定「代码服从文案」：回复量再 **× 当前层数**，层数**一次性清空**
-    ///     （原来是"50% 一次 + 减 1 层"，与游戏内文案「× 当前层数，一口气结清所有层数」不符 ✗）。
-    ///     "龙剑类型" = 魔剑体系那两张攻击牌（嗜血龙剑 / 嗜血魔剑）。
+    ///     ★★ **龙剑类型**打出时的倍率（★ 2026-10-07 由 50% 改为 **40%**）—— **向上取整**，
+    ///     且**一口气结清全部层数**。
+    ///
+    ///     <para><b>权威</b>（<c>备注.txt</c> L11）：<i>"龙剑按照40%*层数，一口气消耗完全"</i>。</para>
+    ///
+    ///     <para>历史口径（保留供追溯）：用户 2026-09-23「在魔剑打出的吸血倍率是 50%（向上取整）」
+    ///     +「吸血是只有被**龙剑类型**的伤害卡牌打出才会**消耗**并获得**额外倍率**」；
+    ///     2026-10-06「代码服从文案」⇒ 回复量 **× 当前层数**、层数**一次性清空**。
+    ///     "龙剑类型" = 魔剑体系那两张攻击牌（嗜血龙剑 / 嗜血魔剑）。</para>
     /// </summary>
-    public const int MaxBladePercent = 50;
+    public const int MaxBladePercent = 40;
 
     /// <summary>★ **其他攻击牌**吸血的**最低回复量**（1 点）—— 用户口径：「最低为 1」。**不消耗层数**。</summary>
     public const int MinHeal = 1;
@@ -129,12 +136,13 @@ public sealed class OrcaLifestealPower : PowerModel
     ///     ★★ <b>一次出牌结束 ⇒ 结算一次回血</b>（用户口径 2026-10-06：
     ///     <i>"回血是总伤害 × 倍率，总生命伤害已经包括了各个敌人结算"</i>）。
     ///
-    ///     <para>两档（用户口径 2026-09-23）：
+    ///     <para>两档（★ 2026-10-07 按 <c>备注.txt</c> L9-12 改版：<b>两档都吃层数</b>）：
     ///     <list type="bullet">
-    ///       <item><b>龙剑类型</b>（嗜血龙剑 / 嗜血魔剑）⇒ <c>ceil(总生命伤害 × 50%) × 当前层数</c>，
-    ///         并**一口气结清全部层数**（2026-10-06 用户裁定"代码服从文案"）；</item>
-    ///       <item><b>其他攻击牌</b> ⇒ <c>max(1, floor(总生命伤害 × 25%))</c>，**不消耗层数**。</item>
-    ///     </list></para>
+    ///       <item><b>龙剑类型</b>（嗜血龙剑 / 嗜血魔剑）⇒ <c>ceil(总生命伤害 × 40%) × 当前层数</c>，
+    ///         并**一口气结清全部层数**；</item>
+    ///       <item><b>其他攻击牌</b> ⇒ <c>max(1, floor(总生命伤害 × 20%)) × 当前层数</c>，**不消耗层数**。</item>
+    ///     </list>
+    ///     两档都**不享受治疗加成**（备注.txt L12）—— 见 <c>OrcaHealBonusPatch</c> 里的闸门放行。</para>
     /// </summary>
     public override async Task AfterCardPlayed(PlayerChoiceContext choiceContext, CardPlay cardPlay)
     {
@@ -148,7 +156,8 @@ public sealed class OrcaLifestealPower : PowerModel
 
         try
         {
-            int layers = isSword ? (int)Amount : 0;      // 层数要在清层之前取
+            // ★ 层数要在清层之前取；★ 2026-10-07 起**两档都吃层数**（备注.txt L10-11：两行都写着"*层数"）
+            int layers = (int)Amount;
 
             int healed;
             string which;
@@ -159,8 +168,8 @@ public sealed class OrcaLifestealPower : PowerModel
             }
             else
             {
-                healed = Math.Max(MinHeal, (int)Math.Floor(total * Percent / 100.0));
-                which = $"其他攻击牌 {Percent}%（向下取整，最低 {MinHeal}）";
+                healed = Math.Max(MinHeal, (int)Math.Floor(total * Percent / 100.0)) * layers;
+                which = $"其他攻击牌 {Percent}%（向下取整，最低 {MinHeal}）× {layers} 层";
             }
 
             if (healed <= 0) return;
@@ -182,7 +191,8 @@ public sealed class OrcaLifestealPower : PowerModel
             }
             OrcaLog.Info($"[Orca] 吸血触发（本次出牌合计）：{which}，总生命伤害 {total} → 回复 {healed} 点生命"
                      + $"（{before} → {creature.CurrentHp}）"
-                     + (isSword ? $"，一口气结清 {layers} 层" : "，**不消耗层数**"), 2);
+                     + (isSword ? $"，一口气结清 {layers} 层" : "，**不消耗层数**")
+                     + "；★ 该笔**不享受治疗加成**（备注.txt L12）", 2);
 
             // ★ 只有**龙剑类型**才清层，且是**一口气结清全部层数**（用户 2026-10-06 裁定）
             if (isSword) await PowerCmd.Remove(this);

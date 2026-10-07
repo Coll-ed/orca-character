@@ -31,7 +31,8 @@ namespace OrcaCharacter;
 ///       <item><b>先打护盾、再打生命</b>（权威「【焚烧】先攻击护盾再生命结算」）⇒ 伤害属性
 ///         <b>不带</b> <c>Unblockable</c>（带它＝无视格挡，与权威相反 ✗），见 <see cref="BurnDamageProps" />；</item>
 ///       <item><b>附加到已有【焚烧】的敌人 ⇒ 它自己立刻无消耗炸一次，且不波及他人</b>
-///         ⇒ 见 <see cref="AfterPowerAmountChanged" />（只在"这次是加层"且"加之前它身上已经有层"时触发）；</item>
+///         ⇒ 见 <see cref="AfterPowerAmountChanged" />（只在"这次是加层"且"加之前它身上已经有层"时触发；
+///         <b>伤害取加层前的层数</b>）；</item>
 ///       <item><b>【生死一线】（熔渊枯骨）改写结算</b>：附加即时触发<b>失效</b>、结算打<b>场上所有人</b>、
 ///         层数<b>完全不消耗</b>（权威「不再消失」）⇒ 见 <see cref="OrcaMoltenBonePower" /> 与 <see cref="Burst" />。</item>
 ///     </list></para>
@@ -67,9 +68,10 @@ public sealed class OrcaBurnPower : PowerModel
     ///
     ///     <para>★ <b>首次挂上不触发</b>：那一刻 <c>Amount == amount</c> ⇒ 加层前是 0 ⇒ 不是"附加到**带有**焚烧的敌人"。</para>
     ///
-    ///     <para>★ <b>伤害口径</b>＝<b>该敌人自己当前的层数</b>（含本次刚加上去的），只打它自己。
-    ///     用户 2026-10-07 裁定：「现在就做：附加到已有焚烧的敌人 → 它自己立刻无消耗炸一次」，
-    ///     并明确伤害<b>不按</b>场上总层数（那会在多敌时爆炸式增长）。</para>
+    ///     <para>★ <b>伤害口径</b>＝<b>加层之前</b>该敌人身上的层数
+    ///     （★ 2026-10-07 用户第二版裁定：<i>"附加【焚烧】触发，是触发之前的层数，而不是叠加后的层数，不然太强了"</i>），
+    ///     只打它自己。例：原本 3 层、本次附加 2 层 ⇒ 炸 3 点，层数照旧累加到 5。
+    ///     （第一版曾定为"含本次增量的当前层数"，本条**覆盖**它。）</para>
     /// </summary>
     public override async Task AfterPowerAmountChanged(
         PlayerChoiceContext choiceContext,
@@ -99,7 +101,10 @@ public sealed class OrcaBurnPower : PowerModel
 
             if (CombatManager.Instance.IsOverOrEnding) return;
 
-            int stacks = (int)Amount;                            // 无消耗 ⇒ 用当前层数
+            // ★★ 2026-10-07 用户第二版裁定：炸的是**加层之前**的层数，不是叠加后的。
+            //    原话："附加【焚烧】触发，是触发之前的层数，而不是叠加后的层数，不然太强了"
+            //    例：敌人原本 3 层、你这次附加 2 层 ⇒ 立刻炸 **3** 点（不是 5 点）；层数照旧累加到 5。
+            int stacks = before;
             int hpBefore = Owner.CurrentHp;
 
             // ★ 只打它自己（权威「此效果触发的伤害不会波及它人」）⇒ 不走 Burst 的波及逻辑。
@@ -108,8 +113,8 @@ public sealed class OrcaBurnPower : PowerModel
             await CreatureCmd.Damage(choiceContext, new[] { Owner }, (decimal)stacks, BurnDamageProps, applier);
 
             int lost = Math.Max(0, hpBefore - Owner.CurrentHp);
-            Log.Info($"[Orca] 焚烧·附加即时触发：{Owner.Name} 原本已有 {before} 层 + 本次 {added} 层"
-                   + $" ⇒ 立刻无消耗炸 {stacks} 点（先扣格挡），实际损失生命 {lost}"
+            Log.Info($"[Orca] 焚烧·附加即时触发：{Owner.Name} 加层前 {before} 层（本次 +{added} ⇒ 加层后 {Amount} 层）"
+                   + $" ⇒ 按**加层前**层数立刻无消耗炸 {stacks} 点（先扣格挡），实际损失生命 {lost}"
                    + $"（不消耗层数、不波及他人）", 2);
         }
         catch (Exception ex)

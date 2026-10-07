@@ -98,6 +98,16 @@ internal static class OrcaHealBonusPatch
             var power = creature.GetPower<OrcaHealBonusPower>();
             if (power == null) return;
 
+            // ★★ 2026-10-07 权威（<c>work/奥卡卡包集/备注.txt</c> L12）：<i>"吸血…**不享受治疗加成**"</i>
+            //    ⇒ 吸血那一路的治疗原样放行，不放大（闸门由 OrcaLifestealHeal 标注，
+            //      两个生产端见其类摘要：吸血结算 / 魔剑单敌自愈）。
+            if (OrcaLifestealHeal.InFlight)
+            {
+                OrcaLog.Info($"[Orca] 治疗加成：{creature.Name} 的 {amount} 点治疗来自【吸血】"
+                           + " ⇒ 按权威**不加成**（吸血不享受治疗加成）", 2);
+                return;
+            }
+
             // ★ 2026-10-05：加成现在就是 Amount 本身（烧牌直接涨 Amount ⇒ 图标/浮窗/结算同源）
             int pct = power.Amount;
             if (pct <= 0) return;
