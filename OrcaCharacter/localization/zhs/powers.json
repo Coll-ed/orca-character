@@ -1,7 +1,7 @@
 {
   "ORCA_BLOOD_NIRVANA_POWER.description": "当你受到致命伤害时，消耗所有战斗临时生命上限，并回复其中 {BasePercent}% 的生命（敲后 {UpgradedPercent}%）（触发一次后消失）。",
   "ORCA_BLOOD_NIRVANA_POWER.title": "浴血涅槃",
-  "ORCA_BURN_POWER.description": "敌方回合结束时炸开：对每个带[gold]焚烧[/gold]的敌人造成（层数）点伤害（**先扣格挡**、再扣生命），然后消耗掉层数。\n当你把[gold]焚烧[/gold]附加到**已经带着[gold]焚烧[/gold]**的敌人身上时，它会立刻无消耗地炸一次（这次只打它自己）。",
+  "ORCA_BURN_POWER.description": "敌方回合结束时炸开：对每个带[gold]焚烧[/gold]的敌人造成（层数）点伤害（**先扣格挡**、再扣生命），然后消耗掉层数。\n当你把[gold]焚烧[/gold]附加到**已经带着[gold]焚烧[/gold]**的敌人身上时，它会立刻无消耗地炸一次（这次只打它自己，且**按加层前的层数**算）。",
   "ORCA_BURN_POWER.title": "焚烧",
   "ORCA_CODEX_ECHO_POWER.description": "接下来**每次**打出[gold]龙族魔典[/gold]，额外多打出 1 次（每次消耗 1 层）。",
   "ORCA_CODEX_ECHO_POWER.title": "回响",
