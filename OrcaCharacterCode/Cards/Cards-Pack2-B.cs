@@ -78,28 +78,45 @@ public sealed class OrcaOverlook : OrcaCard
         //   见 MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs.cs:68-78。
         //   过滤器与候选集合**同一判据**（都是"不含本卡"）⇒ 出现与可选的集合不可能漂移。
         // ★ "等额"的**唯一**口径 = 本次实际消耗成功的张数（抽牌 / 焚烧 / 【睥睨】层数都读它）
-        int n = 0;
-        if (candidates.Count > 0)
+        // ★★ 2026-10-07 修「自动打出时一张都烧不掉、手牌全进了弃牌堆」
+        //    （用户实报：睥睨被【乱战】自动打出后，烧牌全部烧到弃牌堆了）：
+        //    自动打出（乱战 / 龙族魔典免费打出 / 狂躁…）时**玩家没法做选择** ⇒
+        //    引擎的选择器拿不到任何点选结果 ⇒ 一张都不消耗，回合结束时它们就按普通手牌被弃掉 ✗。
+        //    ⇒ 自动打出时退化成**确定性行为**：把候选里的牌**全部**消耗掉 ——
+        //      "选取任意张"里选"全部"本身就是合法选择 ✓，只是这一次不由玩家点。
+        List<CardModel> chosen;
+        if (candidates.Count == 0)
         {
-            var chosen = await CardSelectCmd.FromHand(
+            chosen = new List<CardModel>();
+        }
+        else if (play.IsAutoPlay)
+        {
+            OrcaLog.Info($"[Orca] 睥睨：本次是**自动打出**（乱战 / 魔典 / 狂躁…）⇒ 无法弹选择界面，"
+                       + $"按「全部消耗」处理（候选 {candidates.Count} 张）", 2);
+            chosen = candidates;
+        }
+        else
+        {
+            chosen = (await CardSelectCmd.FromHand(
                 ctx,
                 Owner,
                 new CardSelectorPrefs(CardSelectorPrefs.ExhaustSelectionPrompt, 0, candidates.Count),
                 c => !ReferenceEquals(c, this),
-                this);
+                this)).ToList();
+        }
 
-            foreach (var card in chosen.ToList())
+        int n = 0;
+        foreach (var card in chosen)
+        {
+            try
             {
-                try
-                {
-                    await CardCmd.Exhaust(ctx, card, false, false);
-                    n++;
-                }
-                catch (Exception ex)
-                {
-                    // 不静默吞：没消耗掉的牌不计入等额，且留下记录（权威的"等额"以实际消耗为准）
-                    OrcaLog.Warn($"[Orca] 睥睨：消耗 {card.Id.Entry} 失败（不计入等额张数）：{ex.Message}", 2);
-                }
+                await CardCmd.Exhaust(ctx, card, false, false);
+                n++;
+            }
+            catch (Exception ex)
+            {
+                // 不静默吞：没消耗掉的牌不计入等额，且留下记录（权威的"等额"以实际消耗为准）
+                OrcaLog.Warn($"[Orca] 睥睨：消耗 {card.Id.Entry} 失败（不计入等额张数）：{ex.Message}", 2);
             }
         }
 
