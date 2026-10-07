@@ -25,12 +25,98 @@ namespace OrcaCharacter;
 ///
 ///     <para>⚠️ <b>去重</b>：每个带焚烧的敌人都会各自收到一次钩子 ⇒ 必须只让"第一个带焚烧的敌人"
 ///     统一结算（<c>DoomPower.ShouldDoomTrigger</c> 用的就是这个模式），否则会炸 N 遍。</para>
+///     <para>★★ <b>2026-10-07 权威改版</b>（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L45-48）——
+///     本轮把【焚烧】的三条规则钉死，逐条对应下面的实现：
+///     <list type="number">
+///       <item><b>先打护盾、再打生命</b>（权威「【焚烧】先攻击护盾再生命结算」）⇒ 伤害属性
+///         <b>不带</b> <c>Unblockable</c>（带它＝无视格挡，与权威相反 ✗），见 <see cref="BurnDamageProps" />；</item>
+///       <item><b>附加到已有【焚烧】的敌人 ⇒ 它自己立刻无消耗炸一次，且不波及他人</b>
+///         ⇒ 见 <see cref="AfterPowerAmountChanged" />（只在"这次是加层"且"加之前它身上已经有层"时触发）；</item>
+///       <item><b>【生死一线】（熔渊枯骨）改写结算</b>：附加即时触发<b>失效</b>、结算打<b>场上所有人</b>、
+///         层数<b>完全不消耗</b>（权威「不再消失」）⇒ 见 <see cref="OrcaMoltenBonePower" /> 与 <see cref="Burst" />。</item>
+///     </list></para>
 /// </summary>
 public sealed class OrcaBurnPower : PowerModel
 {
     public override PowerType Type => PowerType.Debuff;
 
     public override PowerStackType StackType => PowerStackType.Counter;
+
+    /// <summary>
+    ///     【焚烧】出伤用的伤害属性 —— <b>单一来源</b>：回合结束结算、附加即时触发两条路共用它。
+    ///
+    ///     <para>权威（<c>卡牌说明1.txt</c> L47）：「触发特效为灼伤的触发特效，<b>【焚烧】先攻击护盾再生命结算</b>」
+    ///     ⇒ <b>不带</b> <c>Unblockable</c>（<c>ValueProp.Unblockable</c> 的官方注释就是
+    ///     <i>"HP loss like Poison"</i> ＝ 无视格挡，与权威相反 ✗）。
+    ///     保留 <c>Unpowered</c>（官方注释 <i>"Damage from relics, potions, and powers"</i>）：
+    ///     焚烧伤害恒等于层数，**不该**吃力量之类的攻击加成。</para>
+    /// </summary>
+    private const ValueProp BurnDamageProps = ValueProp.Unpowered;
+
+    /// <summary>
+    ///     ★★ <b>「附加【焚烧】到已有【焚烧】的敌人」⇒ 它自己立刻无消耗炸一次</b>
+    ///     （权威 L46：「当你附加【焚烧】到带有【焚烧】的敌人时，这名敌人会无消耗的立刻触发一次【焚烧】，
+    ///     此效果触发的伤害<b>不会波及它人</b>」）。
+    ///
+    ///     <para><b>为什么挂在这个钩子</b>：<c>PowerCmd.Apply</c> 分两条路 ——
+    ///     目标身上**没有**该 Power 时走"新建实例"（<c>PowerModel.AfterApplied</c>），
+    ///     **已有**时走 <c>ModifyAmount</c>（<b>只加层，不调 <c>AfterApplied</c></b>，实据
+    ///     <c>PowerCmd.cs:83-92</c>）。而<b>两条路都会</b>调 <c>Hook.AfterPowerAmountChanged</c>
+    ///     （实据 <c>PowerCmd.cs:160</c> 与 <c>:250</c>）⇒ 只有这个钩子能同时覆盖，
+    ///     且它能区分"本次加了多少层"。</para>
+    ///
+    ///     <para>★ <b>首次挂上不触发</b>：那一刻 <c>Amount == amount</c> ⇒ 加层前是 0 ⇒ 不是"附加到**带有**焚烧的敌人"。</para>
+    ///
+    ///     <para>★ <b>伤害口径</b>＝<b>该敌人自己当前的层数</b>（含本次刚加上去的），只打它自己。
+    ///     用户 2026-10-07 裁定：「现在就做：附加到已有焚烧的敌人 → 它自己立刻无消耗炸一次」，
+    ///     并明确伤害<b>不按</b>场上总层数（那会在多敌时爆炸式增长）。</para>
+    /// </summary>
+    public override async Task AfterPowerAmountChanged(
+        PlayerChoiceContext choiceContext,
+        PowerModel power,
+        decimal amount,
+        Creature? applier,
+        CardModel? cardSource)
+    {
+        try
+        {
+            if (!ReferenceEquals(power, this)) return;          // 只认我们自己这一次【焚烧】的变化
+            if (amount <= 0) return;                            // 只在"加层"时；扣层/清层不触发
+            if (applier == null || !applier.IsPlayer) return;   // 权威写的是「**你**附加」⇒ 只认玩家方施加的
+            if (Owner == null || Owner.IsDead || Owner.IsPlayer) return;   // 只对敌人（我方身上的焚烧不触发）
+
+            int added = (int)amount;
+            int before = (int)Amount - added;                    // ★ 钩子触发时 Amount 已含本次增量
+            if (before <= 0) return;                             // 首次挂上 ⇒ 不触发
+
+            // ★★ 【生死一线】「你触发的附加【焚烧】将不再有效果」（权威 卡牌说明2.txt L28）
+            if (OrcaMoltenBonePower.IsActive(applier))
+            {
+                Log.Info($"[Orca] 焚烧·附加即时触发：{Owner.Name} 已有 {before} 层，但施加者带【生死一线】"
+                       + " ⇒ 本次附加不触发（权威：你触发的附加焚烧不再有效果）", 2);
+                return;
+            }
+
+            if (CombatManager.Instance.IsOverOrEnding) return;
+
+            int stacks = (int)Amount;                            // 无消耗 ⇒ 用当前层数
+            int hpBefore = Owner.CurrentHp;
+
+            // ★ 只打它自己（权威「此效果触发的伤害不会波及它人」）⇒ 不走 Burst 的波及逻辑。
+            //   ⚠️ 这里**不需要** OrcaDeathQuotes 的批次闸门：目标只可能是敌人，玩家不可能被这次伤害打死
+            //      （那条闸门服务的是"你和敌人被同一批焚烧一起烧死"的死亡台词）。
+            await CreatureCmd.Damage(choiceContext, new[] { Owner }, (decimal)stacks, BurnDamageProps, applier);
+
+            int lost = Math.Max(0, hpBefore - Owner.CurrentHp);
+            Log.Info($"[Orca] 焚烧·附加即时触发：{Owner.Name} 原本已有 {before} 层 + 本次 {added} 层"
+                   + $" ⇒ 立刻无消耗炸 {stacks} 点（先扣格挡），实际损失生命 {lost}"
+                   + $"（不消耗层数、不波及他人）", 2);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"[Orca] 焚烧·附加即时触发出错（不影响本次附加）：{ex.Message}", 2);
+        }
+    }
 
     public override async Task AfterSideTurnEnd(
         PlayerChoiceContext choiceContext,
@@ -54,7 +140,7 @@ public sealed class OrcaBurnPower : PowerModel
             if (burning.Count == 0) return;
             if (burning[0] != Owner) return;
 
-            // 回合结束的结算 = 触发一次并**消耗层数**
+            // 回合结束的结算 = 触发一次；层数是否消耗由【生死一线】决定（见 Burst）
             await Burst(choiceContext, combat, consumeStacks: true, why: "回合结束");
         }
         catch (Exception ex)
@@ -73,8 +159,8 @@ public sealed class OrcaBurnPower : PowerModel
     ///     伤害公式、波及范围、A2/A3 开关语义都只有一份），只差 <c>consumeStacks</c> 一个参数。</para>
     /// </summary>
     /// <param name="ctx">选择上下文。</param>
-    /// <returns>本次触发的"炸开"个数（0 = 场上没有焚烧）。</returns>
-    internal static async Task<int> TriggerAllNow(PlayerChoiceContext ctx)
+    /// <returns>本次触发的“炸开”个数（0 = 场上没有焚烧），以及本批**敌人实际损失的生命**（红莲淬据此给剑加伤害附加）。</returns>
+    internal static async Task<(int BurstCount, int EnemyHpLost)> TriggerAllNow(PlayerChoiceContext ctx)
     {
         // ⚠️ 取战斗状态用 DebugOnlyGetState —— 红莲淬在**玩家回合内**打出，它此时就是当前战斗状态 ✓
         //    （实据：ilspy 反编译 sts2.dll，CombatManager 里**没有**公开的 State 属性，
@@ -84,7 +170,7 @@ public sealed class OrcaBurnPower : PowerModel
         if (combat == null)
         {
             Log.Warn("[Orca] 红莲淬：不在战斗中，本次不触发", 2);
-            return 0;
+            return (0, 0);
         }
 
         // 先数一下有没有可触发的（没触发时红莲淬要显式告诉玩家"什么都没发生"）
@@ -92,12 +178,12 @@ public sealed class OrcaBurnPower : PowerModel
         if (n == 0)
         {
             Log.Info("[Orca] 红莲淬：场上没有任何【焚烧】⇒ 本次无效果", 2);
-            return 0;
+            return (0, 0);
         }
 
-        await Burst(ctx, combat, consumeStacks: false, why: "红莲淬");
-        Log.Info($"[Orca] 红莲淬：立刻触发 {n} 个【焚烧】（不消耗层数）", 2);
-        return n;
+        var (bursts, enemyHpLost) = await Burst(ctx, combat, consumeStacks: false, why: "红莲淬");
+        Log.Info($"[Orca] 红莲淬：立刻触发 {n} 个【焚烧】（不消耗层数）⇒ 敌人实际损失生命合计 {enemyHpLost}", 2);
+        return (bursts, enemyHpLost);
     }
 
     /// <summary>数场上还有几个带【焚烧】的存活单位。
@@ -119,13 +205,17 @@ public sealed class OrcaBurnPower : PowerModel
     ///     焚烧的**唯一**结算实现：取快照 → （可选）扣层 → 每个炸开者波及所有带焚烧者。
     ///
     ///     <para><paramref name="consumeStacks" /> = <c>true</c> 用于回合结束（消耗层数），
-    ///     <c>false</c> 用于红莲淬（无消耗触发）。</para>
+    ///     <c>false</c> 用于红莲淬（无消耗触发）；★【生死一线】生效时**恒不消耗**（权威「不再消失」）。</para>
+    ///
+    ///     <para><b>返回值</b>：本批"炸开"的批次数，以及<b>敌人实际损失的生命合计</b> ——
+    ///     红莲淬按权威 L21「将敌人损失的生命附加到龙剑/魔剑伤害中」消费后者。</para>
     /// </summary>
     /// <param name="choiceContext">选择上下文。</param>
     /// <param name="combat">战斗状态（由调用方给 —— 回合结束那条路用 <c>Owner.CombatState</c>）。</param>
-    /// <param name="consumeStacks"><c>true</c> 用于回合结束（消耗层数），<c>false</c> 用于红莲淬（无消耗触发）。</param>
+    /// <param name="consumeStacks"><c>true</c> 用于回合结束（消耗层数），<c>false</c> 用于红莲淬（无消耗触发）；
+    /// ★【生死一线】生效时即使传 <c>true</c> 也不消耗（权威「不再消失」）。</param>
     /// <param name="why">日志里的触发来源。</param>
-    private static async Task Burst(
+    private static async Task<(int Bursts, int EnemyHpLost)> Burst(
         PlayerChoiceContext choiceContext,
         ICombatState combat,
         bool consumeStacks,
@@ -140,51 +230,51 @@ public sealed class OrcaBurnPower : PowerModel
         List<Creature> burning = combat.Creatures
             .Where(c => !c.IsDead && (c.GetPower<OrcaBurnPower>()?.Amount ?? 0) > 0)
             .ToList();
-        if (burning.Count == 0) return;
+        if (burning.Count == 0) return (0, 0);
 
         // ① 先取快照（结算过程中层数会被清空）
         var snapshot = burning
             .Select(c => (Target: c, Stacks: (int)(c.GetPower<OrcaBurnPower>()?.Amount ?? 0)))
             .Where(t => t.Stacks > 0)
             .ToList();
-        if (snapshot.Count == 0) return;
+        if (snapshot.Count == 0) return (0, 0);
 
-        // ★ A3（2026-10-01）：【生死一线】（熔渊枯骨）—— 口径原文见 OrcaPowers2.cs L143-151：
-        //   "你造成的【焚烧】每次触发只消耗 50% 层数，【焚烧】现在变成对场上所有人（包括奥卡）造成伤害"
+        // ★ 本批统计：bursts 只用于日志，enemyHpLost 是红莲淬的联动输入（敌人**实际**损失的生命）
+        int bursts = 0;
+        int enemyHpLost = 0;
+
+        // ★ A3（2026-10-01；★ 2026-10-07 按权威改版整体重订）：【生死一线】（熔渊枯骨）—— 现行权威原文
+        //   （work/奥卡卡包集/卡牌包2/卡牌说明2.txt L28）：
+        //   "你触发的附加【焚烧】将不再有效果，每次【焚烧】结算时将对场上所有人（包括奥卡）造成伤害，不再消失"
+        //   ⇒ 三条：① 附加即时触发失效（见 AfterPowerAmountChanged）；② 波及场上所有人（含奥卡）；
+        //     ③ 层数**完全不消耗**（= 下方消费段的 consumeStacks && !molten）。
+        //     旧口径「每次触发只消耗 50% 层数（向下取整）」已随本轮作废。
         //   ★ 2026-10-04 恢复真判据（原来是 /*TOGGLE-OFF-A3*/ bool molten = false; 硬编码短路
         //     ⇒ 熔渊枯骨永远不生效，而 OrcaMoltenBonePower.IsActive 全工程只有定义、无调用点）。
         //   判据来源 = 现成的 OrcaMoltenBonePower.IsActive(Creature?)（单一来源，不另写一份判断）。
         //   ⚠️ 只认**玩家自己**身上有没有这个 Power：权威写的是"**你造成的**【焚烧】"，
         //      若按"场上任意生物"取，联机里任一玩家带【生死一线】就会改写所有人的焚烧结算。
         bool molten = OrcaMoltenBonePower.IsActive(combat.PlayerCreatures.FirstOrDefault());
-        if (molten) Log.Info("[Orca] 焚烧结算：【生死一线】生效 ⇒ 只消耗 50% 层数 + 波及场上所有人（含奥卡）", 2);
+        if (molten) Log.Info("[Orca] 焚烧结算：【生死一线】生效 ⇒ 层数**完全不消耗**（权威「不再消失」）+ 波及场上所有人（含奥卡）", 2);
 
         // ⚠️ 日志必须**如实**说明这一批"炸到谁"：molten 时打的是场上所有人（含没带焚烧的敌人），
         //    若照旧写成"带焚烧的敌人"，实机排查会把范围误判成"只打带焚烧的"✗（本次订正的原因）
         string scopeText = molten ? "场上所有人（含未带焚烧者）" : "带焚烧者";
 
         // ② 消耗层数（红莲淬走"无消耗"⇒ 整段跳过）
-        if (consumeStacks)
+        // ★ 2026-10-07 权威改版：① 红莲淬 ⇒ consumeStacks=false，整段跳过；
+        //   ②【生死一线】⇒ 层数**完全不消耗**（权威「不再消失」）⇒ 这里也整段跳过
+        //   （原来那句「只消耗 50% 层数」的半扣分支已随本轮删除，见下面 foreach 内的注释）。
+        if (consumeStacks && !molten)
         {
             foreach (var (target, _) in snapshot)
             {
                 var p = target.GetPower<OrcaBurnPower>();
                 if (p == null) continue;
-                if (molten)
-                {
-                    // 口径："只消耗 50% 层数" ⇒ 移除一半（**向下取整**，剩余层数保留 ✓）
-                    // 依据：权威 卡牌说明2.txt:28「每次触发只消耗50%（具体数值向下取整）层数」
-                    //   例：5 层 ⇒ 扣 2 留 3（此前写成 Ceiling ⇒ 扣 3 留 2，与权威相反 ✗）
-                    // 来源：2026-10-05 用户裁定「按 work 权威改」（清单条目 A1）
-                    // API 实据（ilspy 反编译 sts2.dll）：PowerCmd.ModifyAmount(ctx, power, offset) : Task<int> ✓
-                    int half = p.Amount / 2; // 整数除法＝对非负层数向下取整（原为 Math.Ceiling，已按权威订正）
-                    // 完整签名实据（ilspy）：ModifyAmount(ctx, power, offset, Creature? applier, CardModel? cardSource, bool silent=false) ✓
-                    if (half > 0) await PowerCmd.ModifyAmount(choiceContext, p, -half, null, null);
-                }
-                else
-                {
-                    await PowerCmd.Remove(p);
-                }
+
+                // ★ 2026-10-07 权威改版：走到这里就是**全部消耗**，不再有"扣一半"的分支 ——
+                //   需要"不消耗"的两种情况（红莲淬 / 【生死一线】）都在外层条件里被挡掉了。
+                await PowerCmd.Remove(p);
             }
         }
 
@@ -236,6 +326,13 @@ public sealed class OrcaBurnPower : PowerModel
             //    死亡台词侧靠它才能证明"玩家是被这次焚烧烧死的"，而不是被敌人打死的 ✓
             //    ⚠️ 判定必须在**出伤期间**（Kill 的前置）完成：引擎在 Kill 体内就建结束画面并写文案，
             //       等 Damage 返回之后再判"玩家 IsDead"已经太晚（文案早就写成引擎原文了）✗
+            // ★★ 红莲淬的联动（2026-10-07 权威 卡牌说明1.txt L21）要的是「**敌人损失的生命**」
+            //    ⇒ 出伤前后各取一次当前生命、取差值累加。不用 DamageResult 的理由与魔剑狂躁的单敌回血同款
+            //      （伤害指令的 Execute 不返回它）。
+            //    ⚠️ 只统计**敌人**：molten 时 alive 还含玩家侧生物，那些不该算进"敌人损失的生命"。
+            var enemyHpBefore = alive.Where(c => !c.IsPlayer)
+                                     .ToDictionary(c => c, c => c.CurrentHp);
+
             OrcaDeathQuotes.BeginBurnDamage(batchId);
             try
             {
@@ -243,7 +340,7 @@ public sealed class OrcaBurnPower : PowerModel
                     choiceContext,
                     alive,
                     (decimal)stacks,
-                    ValueProp.Unblockable | ValueProp.Unpowered,
+                    BurnDamageProps,
                     src);
             }
             finally
@@ -251,8 +348,17 @@ public sealed class OrcaBurnPower : PowerModel
                 OrcaDeathQuotes.EndBurnDamage();
             }
 
+            bursts++;
+            foreach (var (creature, hpBefore) in enemyHpBefore)
+            {
+                enemyHpLost += Math.Max(0, hpBefore - creature.CurrentHp);
+            }
+
             Log.Info($"[Orca] 焚烧结算（{why}）：{src.Name} 的 {stacks} 层炸开 → 波及 {alive.Count} 个{scopeText}", 2);
         }
+
+        // ★ 本批统计交回调用方（红莲淬用它把"敌人实际损失的生命"全额加到剑上）
+        return (bursts, enemyHpLost);
     }
 }
 

@@ -17,5 +17,5 @@
   "VOID_RETURN.title": "归墟",
   "BLOOD_NIRVANA.title": "浴血涅槃",
   "OVERLOOK.title": "睥睨",
-  "CRIMSON_TEMPER.description": "将当前场上所有存在的【焚烧】**立刻无消耗触发一次**（层数不扣，火还在）。"
+  "CRIMSON_TEMPER.description": "将当前场上所有存在的【焚烧】**立刻无消耗触发一次**（层数不扣，火还在），并把敌人因此实际损失的生命**全额**加到你携带的那把剑的伤害附加上。"
 }

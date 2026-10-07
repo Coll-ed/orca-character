@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using MegaCrit.Sts2.Core.CardSelection;
 using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
@@ -15,14 +16,16 @@ namespace OrcaCharacter;
 /// <summary>
 ///     ★ 睥睨（1 费 · **银龙** · 技能牌 · **金卡 Rare** · **消耗**，敲后去消耗）。
 ///
-///     <para><b>权威口径</b>（<c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> L38-40）：
-///     <i>"睥睨 / 1费用，银龙，金卡，技能卡，消耗，敲后去消耗（单个图标） /
-///     消耗当前所有的手牌，抽取等额张卡牌，并为所有敌人附加等额层【焚烧】，
+///     <para><b>权威口径</b>（<c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> L38-40，2026-10-07 改版）：
+///     <i>"睥睨 / 1费用，银龙，金卡，技能卡，消耗，敲后去消耗（图标） /
+///     选取消耗**任意张**手牌，抽取等额卡牌，并为所有敌人附加等额层【焚烧】，
 ///     并获得获得等额层buff-【睥睨】——消耗一层，使打出的牌额外打出一次"</i>
-///     （"获得"重复是原文笔误，语义是"获得**等额层** buff【睥睨】"）。</para>
+///     （"获得"重复是原文笔误，语义是"获得**等额层** buff【睥睨】"。
+///     ★ 改版点：旧权威写的是"消耗当前**所有**手牌"，现改为"**选取**消耗任意张"。）</para>
 ///
 ///     <para><b>实现</b>（"等额"三连共用**一个**变量 <c>n</c> ⇒ 单一来源）：
-///     先把手牌逐张 <c>CardCmd.Exhaust</c>（**不含本卡自己** —— 它正在被打出）⇒
+///     先用引擎的多选选择器 <c>CardSelectCmd.FromHand</c>（<c>min=0 / max=候选张数</c>）让玩家
+///     **任选**，再把选中的逐张 <c>CardCmd.Exhaust</c>（候选里**不含本卡自己** —— 它正在被打出）⇒
 ///     <c>n</c> = 实际消耗成功的张数 ⇒ 抽 <c>n</c> 张 /
 ///     给每个存活敌人各 <c>n</c> 层 <see cref="OrcaBurnPower" /> /
 ///     给自己 <c>n</c> 层 <see cref="OrcaOverlookPower" />。顺序与权威原文逐句对应。</para>
@@ -63,35 +66,52 @@ public sealed class OrcaOverlook : OrcaCard
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
-        // ① 消耗当前所有的手牌（权威 L40）。
-        //    不含本卡自己 —— 它正在被打出；引擎是否已把它移出手牌随版本/时序而定，
-        //    这里显式排除 ⇒ 两种情况下的口径一致（"所有手牌"不含正在打出的这一张）。
+        // ① 选取消耗**任意张**手牌（权威 L40，2026-10-07 改版：由「消耗当前**所有**手牌」改成「**选取**消耗任意张」）。
+        //    候选里**不含本卡自己** —— 它正在被打出；引擎是否已把它移出手牌随版本/时序而定，
+        //    这里显式排除 ⇒ 两种时序下的口径一致。
         var hand = PileType.Hand.GetPile(Owner);
-        var toExhaust = hand.Cards.Where(c => !ReferenceEquals(c, this)).ToList();
+        var candidates = hand.Cards.Where(c => !ReferenceEquals(c, this)).ToList();
 
+        // ★ 引擎的多选选择器：min=0 / max=候选张数 ⇒ **选 0 张也合法**。
+        //   实据（反编译 sts2.dll）：CardSelectorPrefs(prompt, minCount, maxCount) 会
+        //   `RequireManualConfirmation = MinSelect >= 0 && MinSelect != MaxSelect`（= 选完要点确认），
+        //   见 MegaCrit.Sts2.Core.CardSelection.CardSelectorPrefs.cs:68-78。
+        //   过滤器与候选集合**同一判据**（都是"不含本卡"）⇒ 出现与可选的集合不可能漂移。
         // ★ "等额"的**唯一**口径 = 本次实际消耗成功的张数（抽牌 / 焚烧 / 【睥睨】层数都读它）
         int n = 0;
-        foreach (var card in toExhaust)
+        if (candidates.Count > 0)
         {
-            try
+            var chosen = await CardSelectCmd.FromHand(
+                ctx,
+                Owner,
+                new CardSelectorPrefs(CardSelectorPrefs.ExhaustSelectionPrompt, 0, candidates.Count),
+                c => !ReferenceEquals(c, this),
+                this);
+
+            foreach (var card in chosen.ToList())
             {
-                await CardCmd.Exhaust(ctx, card, false, false);
-                n++;
-            }
-            catch (Exception ex)
-            {
-                // 不静默吞：没消耗掉的牌不计入等额，且留下记录（权威的"等额"以实际消耗为准）
-                OrcaLog.Warn($"[Orca] 睥睨：消耗 {card.Id.Entry} 失败（不计入等额张数）：{ex.Message}", 2);
+                try
+                {
+                    await CardCmd.Exhaust(ctx, card, false, false);
+                    n++;
+                }
+                catch (Exception ex)
+                {
+                    // 不静默吞：没消耗掉的牌不计入等额，且留下记录（权威的"等额"以实际消耗为准）
+                    OrcaLog.Warn($"[Orca] 睥睨：消耗 {card.Id.Entry} 失败（不计入等额张数）：{ex.Message}", 2);
+                }
             }
         }
 
         // ★ 边界（权威未规定，不猜）：手牌为 0 ⇒ 本卡**整条效果不发生**
         //   （抽 0 张 / 附加 0 层焚烧 / 获得 0 层【睥睨】都没有意义，而挂一个 0 层的 Power 会多出一个空图标）
         //   ⇒ 显式记 WARN，不静默通过。口径待用户确认：见 docs\睥睨重写记录.md。
+        // ★ 2026-10-07 权威改版：现在是"**选取**消耗任意张" ⇒ 选 0 张是**合法操作**，
+        //   不再当作异常边界（旧文案"权威未规定此边界…待用户确认"已随本轮作废）。
         if (n == 0)
         {
-            OrcaLog.Warn("[Orca] 睥睨：手牌中没有其它牌 ⇒ 本次不抽牌、不附加【焚烧】、不获得【睥睨】"
-                       + "（权威未规定此边界，暂按「整条效果不发生」处理，待用户确认）", 2);
+            OrcaLog.Info("[Orca] 睥睨：本次没有消耗任何手牌（选了 0 张 / 手牌里只有本卡）"
+                       + " ⇒ 不抽牌、不附加【焚烧】、不获得【睥睨】", 2);
             return;
         }
 
@@ -127,8 +147,9 @@ public sealed class OrcaOverlook : OrcaCard
 }
 
 /// <summary>
-///     ★ **归墟**（2 费 · Power · Uncommon · Self，见下方构造函数）——
-///     场上所有角色无法回复生命；被阻止的回复按一定比例转入【嗜血龙剑】的伤害附加。
+///     ★ **归墟**（2 费 · 魔剑 · Power · Uncommon · Self，见下方构造函数）——
+///     场上所有角色无法回复生命；被阻止的回复按一定比例转入【嗜血魔剑】的伤害附加；
+///     **不拦截吸血**（权威 2026-10-07：<c>卡牌说明2.txt</c> L52-54）。
 ///
 ///     <para>用户口径：比例 50%，敲后 75%（两个百分点数值定义在
 ///     <see cref="OrcaVoidReturnPower" /> 的 <c>BasePercent</c> / <c>UpgradedPercent</c>，
@@ -159,8 +180,8 @@ public sealed class OrcaVoidReturn : OrcaCard
         var power = await PowerCmd.Apply<OrcaVoidReturnPower>(ctx, Owner.Creature, 1m, Owner.Creature, this);
         if (power != null) power.Ratio = OrcaVoidReturnPower.RatioFromPercent(CurrentPercent);
 
-        OrcaLog.Info($"[Orca] 归墟：场上所有角色的回复将被阻止，"
-                 + $"其中 {CurrentPercent}% 转入【嗜血龙剑】的附加伤害", 2);
+        OrcaLog.Info($"[Orca] 归墟：场上所有角色的回复将被阻止（**不拦截【吸血】**），"
+                 + $"其中 {CurrentPercent}% 转入【嗜血魔剑】的附加伤害", 2);
     }
 
     /// <summary>

@@ -167,7 +167,19 @@ public sealed class OrcaLifestealPower : PowerModel
 
             var creature = Owner;
             int before = creature.CurrentHp;
-            await CreatureCmd.Heal(creature, healed, true);
+
+            // ★★ 归墟（OrcaVoidReturnPower / OrcaVoidReturnBlockPatch）会拦下**一切**回复，
+            //    而权威 2026-10-07 明文「**不拦截吸血**」⇒ 这一笔必须用闸门标出来。
+            //    try/finally 配对：即使引擎在治疗里抛异常，闸门也一定会落下。
+            OrcaLifestealHeal.Begin();
+            try
+            {
+                await CreatureCmd.Heal(creature, healed, true);
+            }
+            finally
+            {
+                OrcaLifestealHeal.End();
+            }
             OrcaLog.Info($"[Orca] 吸血触发（本次出牌合计）：{which}，总生命伤害 {total} → 回复 {healed} 点生命"
                      + $"（{before} → {creature.CurrentHp}）"
                      + (isSword ? $"，一口气结清 {layers} 层" : "，**不消耗层数**"), 2);

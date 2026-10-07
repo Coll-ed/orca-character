@@ -63,6 +63,22 @@ public sealed class OrcaBloodBlade : OrcaFrenzyCard
     /// <summary>本场战斗内累计的伤害附加（与龙剑同一套写法：是字段，不是 DynamicVars）。</summary>
     private int _bonus;
 
+    /// <summary>当前累计的伤害附加 —— 与 <see cref="OrcaBloodSword.Bonus" /> 同构（日志/联动消费者读它）。</summary>
+    internal int Bonus => _bonus;
+
+    /// <summary>
+    ///     累计伤害附加（红莲淬 / 归墟的联动给它加值）。
+    ///     <para>★ 与 <see cref="OrcaBloodSword.AddBonus" /> 同构：唯一入口在
+    ///     <see cref="OrcaSwordBonus.Add" />（三处消费者共用，别处不要直接改 <c>_bonus</c>）。</para>
+    /// </summary>
+    internal void AddBonus(int amount)
+    {
+        if (amount <= 0) return;
+
+        _bonus += amount;
+        OrcaCardUi.Refresh(this);
+    }
+
     /// <summary>
     ///     主动打出时失去**最大生命**的百分比。权威口径：<i>"消耗最大生命30%（具体数值）"</i>。
     ///     ⚠️ 旧代码这里写的是"当前生命 25%" —— 已按用户裁定更正。
@@ -299,7 +315,20 @@ public sealed class OrcaBloodBlade : OrcaFrenzyCard
             return;
         }
 
-        await CreatureCmd.SetCurrentHp(me, me.CurrentHp + heal);
+        // ★★ 这一笔**也是【吸血】**（权威口径：单敌时吸血倍率 100% ⇔ 回血 = 伤害本身）
+        //    ⇒ 必须过同一道闸门：归墟「不拦截吸血」，而这笔走的是 SetCurrentHp
+        //      （不经过 CreatureCmd.Heal）—— 不打标就会被 OrcaVoidReturnPower.AfterCurrentHpChanged
+        //      那条兜底路径又扣回去。
+        OrcaLifestealHeal.Begin();
+        try
+        {
+            await CreatureCmd.SetCurrentHp(me, me.CurrentHp + heal);
+        }
+        finally
+        {
+            OrcaLifestealHeal.End();
+        }
+
         Log.Info($"[Orca] 嗜血魔剑·狂躁（单敌）：恢复 {heal} 点生命"
                  + $"（敌人受到的生命伤害 {dealt}，缺失 {missing}）", 2);
     }

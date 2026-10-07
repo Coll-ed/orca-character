@@ -197,23 +197,94 @@ public sealed class OrcaMoltenBonePower : PowerModel
 public sealed class OrcaBloodNirvanaPower : PowerModel
 {
     /// <summary>
-    ///     回复比例（消耗上限的 50%）。
-    ///     权威：50%（卡牌包2\卡牌说明2.txt L3「回复50%消耗上限（具体数值向下取整）的生命」）。
-    ///     ★ 卡面（<c>ORCA_BLOOD_NIRVANA.description</c> 的 <c>{HealPercent:diff()}</c>）经
-    ///     <see cref="HealRatioDisplay" /> 读这一个常量 ⇒ 改这里卡面跟着变，不再是两处各写一份。
+    ///     未敲的回复比例（百分点，= 卡面 50%）。
+    ///     权威：<c>卡牌包2\卡牌说明2.txt</c> L3「当你受到致命伤害时，消耗所有临时生命上限，
+    ///     回复50%消耗上限（具体数值向下取整）的生命」。
     /// </summary>
-    internal const decimal HealRatio = 0.5m;
+    internal const int BasePercent = 50;
 
     /// <summary>
-    ///     同一比例转成的**百分点数**（0.5m ⇒ 50），仅供卡面显示 ——
-    ///     卡面文案里带格式化器的占位符必须由 <c>DynamicVar</c> 注入（裸值会 <c>No suitable Formatter</c>）。
+    ///     敲后的回复比例（百分点，= 卡面 100%）。
+    ///     ★ <b>2026-10-07 权威改版</b>（<c>卡牌说明2.txt</c> L2「3费，银龙，虚无，金卡，能力牌，
+    ///     <b>敲后100%比例恢复</b>」）⇒ 敲后**不再减费**（旧口径「敲后 3→2 费」已作废），
+    ///     费用恒为 3，升级只抬这个比例。
     /// </summary>
-    internal const decimal HealRatioDisplay = HealRatio * 100m;
+    internal const int UpgradedPercent = 100;
+
+    /// <summary>百分数 ↔ 比例的分母（100 = "百分数"这个单位的定义；两个换算方向共用）。</summary>
+    private const int PercentBase = 100;
+
+    /// <summary>
+    ///     回复比例（消耗上限的比例）—— <b>本实例</b>的字段，由卡牌在出牌时按该卡本局的
+    ///     <c>IsUpgraded</c> 写入（与 <see cref="OrcaVoidReturnPower.Ratio" /> 同一套写法：
+    ///     不引入任何跨局共享的 static 状态）。
+    /// </summary>
+    private decimal _healRatio = RatioFromPercent(BasePercent);
+
+    /// <summary>当前回复比例（0.5 / 1.0）—— 结算与日志共用。</summary>
+    internal decimal HealRatio => _healRatio;
+
+    /// <summary>百分数 → 比例的**唯一**换算点。</summary>
+    internal static decimal RatioFromPercent(int percent) => (decimal)percent / PercentBase;
+
+    /// <summary>比例 → 百分数的**唯一**换算点（卡面/日志显示用；不用 <c>P0</c> 格式化以避开本地化百分号）。</summary>
+    internal static int PercentFromRatio(decimal ratio) => (int)Math.Round(ratio * PercentBase);
+
+    /// <summary>
+    ///     由卡牌在出牌时写入**本实例**的回复比例（敲后 100%，否则 50%）。
+    ///
+    ///     <para>★ 边界显式：百分点非法（不是那两个合法值之一）⇒ 记 Warn 并**拒绝写入**（保持默认 50%），
+    ///     绝不静默接受。</para>
+    /// </summary>
+    /// <param name="percent">未敲 / 敲后的百分点（只接受 <see cref="BasePercent" /> 或 <see cref="UpgradedPercent" />）。</param>
+    internal void SetHealPercent(int percent)
+    {
+        if (percent != BasePercent && percent != UpgradedPercent)
+        {
+            OrcaLog.Warn($"[Orca] 浴血涅槃：收到非法的回复百分点 {percent}"
+                       + $"（合法值只有 {BasePercent} / {UpgradedPercent}）"
+                       + $" ⇒ 本实例仍按 {PercentFromRatio(_healRatio)}% 结算");
+            return;
+        }
+
+        _healRatio = RatioFromPercent(percent);
+        OrcaLog.Info($"[Orca] 浴血涅槃：本实例回复比例已按本局卡牌状态写入 = {PercentFromRatio(_healRatio)}%"
+                   + $"（本局{(percent == UpgradedPercent ? "**已敲**" : "**未敲**")}）");
+    }
 
     /// <summary>本帧是否刚拦下一次致命伤（由纯函数打标、由 Task 钩子消费）。</summary>
     private bool _pending;
 
     public override PowerType Type => PowerType.Buff;
+
+    /// <summary>
+    ///     ★★ <b>浮窗里的百分比跟随本实例的比例</b>（A7 同一套路、同一处反编译实据）：
+    ///     <c>PowerModel.HoverTips</c> 组装 buff 浮窗时**不会**调 <c>AddExtraArgsToDescription</c>
+    ///     （那是 <c>CardModel</c> 独有的钩子，<c>PowerModel</c> 上没有这个方法）⇒
+    ///     带格式化器的占位符只能在 <c>Description</c> 的取值处注入，
+    ///     否则 <c>powers.json</c> 里那个 <c>{HealPercent}</c> 会**裸露**在玩家眼前（不是报错，是显示字面量）。
+    ///     ★ 与卡面同源：两者都读本实例的比例（<see cref="HealRatio" />）⇒ 改常量两处一起变。
+    /// </summary>
+    public override LocString Description
+    {
+        get
+        {
+            var loc = base.Description;
+            try
+            {
+                if (loc.GetRawText().Contains("{HealPercent}"))
+                {
+                    loc.Add("HealPercent", (decimal)PercentFromRatio(HealRatio));
+                }
+            }
+            catch (Exception ex)
+            {
+                // 拿不到原文（表未加载等）⇒ 记日志后放行（与归墟同一处理：宁可退化成"可能裸露"，也不让浮窗构造失败）
+                OrcaLog.Warn($"[Orca] 浴血涅槃：读取浮窗文案原文失败，HealPercent 未注入：{ex.Message}");
+            }
+            return loc;
+        }
+    }
 
     public override PowerStackType StackType => PowerStackType.None;
 
@@ -306,7 +377,7 @@ public sealed class OrcaBloodNirvanaPower : PowerModel
             }
 
             OrcaLog.Info($"[Orca] 浴血涅槃：拦下致命伤 ⇒ 消耗临时生命上限 {used}，"
-                     + $"回复 {heal} 点生命（{HealRatio:P0}）", 2);
+                     + $"回复 {heal} 点生命（{PercentFromRatio(HealRatio)}%）", 2);
         }
         catch (Exception ex)
         {
@@ -324,10 +395,11 @@ public sealed class OrcaBloodNirvanaPower : PowerModel
 
 /// <summary>
 ///     ★ 归墟（卡牌）的 Power —— 场上所有角色**无法回复生命**，
-///     本该回复的生命按 50% 比例转入【嗜血魔剑】的附加伤害。
+///     本该回复的生命按 50% 比例转入【嗜血魔剑】的附加伤害（敲后 75%）；**不拦截吸血**。
 ///
-///     <para>用户口径：<i>"场上所有角色无法回复生命，回复的生命按 50% 比列（向下取整）转入魔剑的附加伤害"</i>；
-///     敲后比例 75%。</para>
+///     <para>权威口径（<c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> L52-54，2026-10-07 改版）：
+///     <i>"归墟 / 2费，魔剑，蓝卡，能力牌，敲后75%比例 / 场上所有角色无法回复生命，
+///     回复的生命按50%比列（向下取整）转入<b>魔剑</b>的附加伤害，<b>不拦截吸血</b>"</i>。</para>
 ///
 ///     <para>实现走 <see cref="AfterCurrentHpChanged" /> 的**正值**分支（同龙之威仪、同银龙血统）：
 ///     原版没有"战斗内治疗"的拦截钩子（`ModifyRestSiteHealAmount` 只管篝火），
@@ -426,6 +498,11 @@ public sealed class OrcaVoidReturnPower : PowerModel
         if (_applying) return;
         if (delta <= 0) return;                                  // 只处理"回复"
 
+        // ★★ 权威 2026-10-07（卡牌说明2.txt L54）：「**不拦截吸血**」
+        //    ⇒ 吸血那一路（闸门见 OrcaLifestealHeal）连"事后撤销"都不做 ——
+        //      否则会把走 SetCurrentHp 的魔剑单敌自愈又扣回去。
+        if (OrcaLifestealHeal.InFlight) return;
+
         try
         {
             _applying = true;
@@ -434,16 +511,16 @@ public sealed class OrcaVoidReturnPower : PowerModel
             await CreatureCmd.SetCurrentHp(creature, creature.CurrentHp - delta);
 
             // ② 其中一部分转成【嗜血魔剑】的附加伤害
+            //    ★ 2026-10-07 权威改版：权威逐字写「转入**魔剑**的附加伤害」—— 改前这里加的是
+            //      【嗜血龙剑】（与权威不符）。加附加的唯一入口 = OrcaSwordBonus.Add。
             int converted = (int)Math.Floor(delta * Ratio);
             if (converted > 0)
             {
-                var sword = Owner?.Player?.PlayerCombatState?.AllCards
-                    .OfType<OrcaBloodSword>().FirstOrDefault();
-                sword?.AddBonus(converted);
+                var pick = OrcaSwordBonus.OrcaSwordPick.BloodBlade;
+                var hits = OrcaSwordBonus.Add(Owner?.Player, converted, pick);
 
                 OrcaLog.Info($"[Orca] 归墟：{creature.Name} 的 {delta} 点回复被阻止 ⇒ "
-                         + $"{converted} 点（{Ratio:P0}）转入【嗜血龙剑】附加伤害"
-                         + $"（当前 {sword?.Bonus ?? 0}）", 2);
+                         + $"{converted} 点（{PercentFromRatio(Ratio)}%）转入{OrcaSwordBonus.Describe(hits, pick)}", 2);
             }
             else
             {
@@ -462,18 +539,25 @@ public sealed class OrcaVoidReturnPower : PowerModel
 }
 
 /// <summary>
-///     ★ 栖途（卡牌）的 Power —— 战斗结束时，把**一部分战斗临时生命上限**
-///     转化为**真实（永久）生命上限**（未敲 25%，敲后 50%）。
+///     ★★ 栖途（卡牌）的 Power ——【栖途】**记账**：自残触发【银龙血统】⇒ +1 层【再生】；
+///     战斗结束后按**本场累计发放的【再生】层数**转化为**真实（永久）生命上限**。
 ///
-///     <para>用户口径：<i>"（选取遗物-欧洛巴斯之触会获得这张卡牌）战斗结束后，
-///     将你 25% 的临时生命上限转化为真实生命上限"</i>；卡包2 补充"敲后 50%"。</para>
+///     <para><b>权威口径</b>（<c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> L42-46，★ 2026-10-07 全面重做）：
+///     <i>"栖途 / 3费，银龙，先古牌，能力牌，敲后（选取遗物-欧洛巴斯之触会获得这张卡牌）/
+///     立刻获得你最大生命值50%点的格挡，结束这一回合并获得【栖途】buff /
+///     【栖途】：在没有受到敌人伤害（烧血自残不算）的情况下触发【银龙血统】时，获得1层再生，
+///     战斗结束后根据再生层数转化为生命上限"</i>。</para>
 ///
-///     <para>⚠️ <b>比例存在 Power **实例**上（<c>_ratio</c>），不是 static</b> —— 它在卡牌出牌时
-///     按该卡本局的 <c>IsUpgraded</c> 现算并写入。跨局泄漏（E4）的来龙去脉见 <c>_ratio</c> 的注释。</para>
+///     <para>⚠️ <b>旧口径整体作废</b>：改版前是"战斗结束后把 25%（敲后 50%）的战斗临时生命上限
+///     转化为真实上限"，那套比例概念已随本轮删除（见下面那行删除说明）。
+///     ★ 历史教训仍然有效、且本版结构性免疫：E4 那次"跨局泄漏"的成因是用**static 标志**表达
+///     "这局敲没敲"（上一局敲过 ⇒ 下一局开局就按敲后结算 ✗）—— 新口径改的是**费用**
+///     （卡牌自己的持久状态，由 <c>EnergyCost.UpgradeBy</c> 承担），本 Power
+///     **没有任何 static 状态**可泄漏。</para>
 ///
-///     <para>⚠️ <b>与银龙血统的配合</b>：遗物 <c>AfterCombatEnd</c> 会把**剩余**临时上限还原掉。
-///     我们从共享池 <see cref="OrcaTempHp" /> 里**先 Consume 掉这个比例**，再加到真实上限上
-///     ⇒ 遗物随后只会还原剩下的 75%（敲后 50%），不会把转化过的部分又扣回去。</para>
+///     <para>★ <b>不再动临时生命上限池</b>：改版前是"从共享池 <see cref="OrcaTempHp" /> 里先 Consume
+///     掉一笔再转成真实上限"，新口径的来源是【再生】层数、与临时上限池**无关**
+///     ⇒ 遗物的收尾逻辑（把本场临时上限还原掉）与这笔转化互不干扰，两边各管各的账。</para>
 ///
 ///     <para>★★ <b>先后顺序已查实（不再是"由引擎决定"的待验证点）</b> —— 本 Power **先跑**，遗物**后跑**。
 ///     两条反编译实据（<c>sts2.dll</c>，2026-10-05 复核）：
@@ -489,105 +573,161 @@ public sealed class OrcaVoidReturnPower : PowerModel
 ///         盟友又排在敌人之前（<c>CombatState.cs:116-118</c>）
 ///         ⇒ 玩家生物上的本 Power 排在银龙血统**之前**。</item>
 ///     </list>
-///     ⇒ 顺序是**对我们有利**的那一种：Consume 掉的那部分遗物根本不会去还原（池子已经小了）。
-///     ⚠️ 但正因为遗物**后跑**，"GainMaxHp 这笔真实上限"必须**紧随其后抬基准**
-///     （见 <c>OrcaBloodline.AdvanceCombatBase</c>，与龙剑/魔剑击杀奖励同一根因），
-///     否则收尾那次绝对写回会把它**再多算一倍**。</para>
+///     ⇒ 顺序是**对我们有利**的那一种：本 Power 的转化**先落地**、遗物的收尾**后跑**。
+///     ⚠️ 正因为遗物**后跑**，"GainMaxHp 这笔真实上限"必须**紧随其后抬基准**
+///     （见 <c>OrcaBloodline.AdvanceCombatBase</c>，与龙剑/魔剑击杀奖励同一根因）：
+///     引擎若在收尾前就把临时上限同步回了基准，那么遗物那句
+///     <c>target = max(basis, MaxHp − pool)</c> 会算出 <c>basis + gain − pool</c>，
+///     一旦 gain &lt; pool 就被那个 max 兜底**吞掉**（这场转化白做）✗；
+///     抬过基准之后它在"引擎清过 / 没清过"两种世界下都成立。</para>
 /// </summary>
 public sealed class OrcaHomesteadPower : PowerModel
 {
-    /// <summary>
-    ///     ★ 卡包2 原文："敲后50%" ⇒ 升级后比例 25% → 50%。
-    ///
-    ///     <para>⚠️ <b>E4 已修（跨局泄漏）</b>：这里**原来**是 <c>internal static bool UpgradedRatio</c>
-    ///     + <c>static Ratio =&gt; UpgradedRatio ? 0.5m : 0.25m</c>，而它只由卡牌的
-    ///     <c>OrcaHomestead.OnUpgrade()</c> 单向置 <c>true</c>、**全工程无任何一处复位**
-    ///     ⇒ static 跨局共享 ⇒ <b>上一局敲过栖途，下一局开局就按敲后的 50% 结算</b> ✗。
-    ///     现改为**本 Power 实例自己的字段**，由卡牌在**每次出牌时**按
-    ///     <c>IsUpgraded</c> 重新写入（同 <c>OrcaVoidReturn.OnPlay</c> 的既有写法）
-    ///     ⇒ "这局敲没敲"完全由卡牌自身状态推导，**没有跨局共享状态可泄漏** ✓。</para>
-    ///
-    ///     <para>⚠️ 这里<b>刻意</b>不再提供任何 static 的"全局比例"—— 比例是<b>本实例</b>的字段；
-    ///     而这个功能的**数值定义**（25 / 50 两个百分点）就在本类里，卡牌的
-    ///     <c>CurrentPercent</c> 只**引用**它（单一来源：卡面 / 日志 / 结算同源）✓</para>
-    /// </summary>
-    private decimal _ratio = RatioFromPercent(BasePercent);
-
-    /// <summary>未敲的转化比例（百分点，= 卡面 25%）—— <b>本功能数值的唯一来源</b>。</summary>
-    internal const int BasePercent = 25;
-
-    /// <summary>敲后的转化比例（百分点，= 卡面 50%）。</summary>
-    internal const int UpgradedPercent = 50;
-
-    /// <summary>百分数 ↔ 比例的分母（100 = "百分数"这个单位的定义；两个换算方向共用）。</summary>
-    private const int PercentBase = 100;
-
-    /// <summary>当前转化比例（0.25 或 0.5）—— <b>本实例</b>的，随每次出牌按卡牌是否敲过重新写入。</summary>
-    internal decimal Ratio => _ratio;
+    /// <summary>【栖途】每触发一次发放的【再生】层数（权威 L46「获得1层再生」）。</summary>
+    internal const int RegenPerTrigger = 1;
 
     /// <summary>
-    ///     ★ <b>百分数 → 比例的**唯一**换算点</b>：把 <see cref="BasePercent" /> /
-    ///     <see cref="UpgradedPercent" /> 一次性除成 <c>Ratio</c> 要用的 0.25 / 0.5，
-    ///     免得 100 这个换算因子散落在多处（与 <c>OrcaBloodNirvanaPower.HealRatioDisplay</c>
-    ///     的"显示 ↔ 结算同源"是同一套路，只是方向相反）。
+    ///     战斗结束时**每层【再生】换到的生命上限**。
+    ///     ★ 2026-10-07 用户裁定：「1 层再生 = +1 生命上限」。
+    ///     ⚠️ 换算用的"层数"是**本场【栖途】累计发放的层数**（= 本 Power 的 <c>Amount</c>），
+    ///     不是"战斗结束那一刻身上还剩的【再生】层数" —— 口径理由见 <see cref="AfterCombatEnd" />。
     /// </summary>
-    internal static decimal RatioFromPercent(int percent) => (decimal)percent / PercentBase;
-
-    /// <summary>比例 → 百分数的**唯一**换算点（日志与卡面显示同源）。</summary>
-    internal static int PercentFromRatio(decimal ratio) => (int)Math.Round(ratio * PercentBase);
+    internal const int MaxHpPerRegen = 1;
 
     /// <summary>
-    ///     ★ 由卡牌在出牌时写入**本实例**的转化比例（敲后 50%，否则 25%）。
-    ///
-    ///     <para>⚠️ 复用"同一个生物身上只有一份"的简化：与 <c>OrcaVoidReturnPower</c> 同理，
-    ///     我们假设同一时刻身上至多只有一张栖途生效（用户口径：该牌由欧洛巴斯之触给一张）。
-    ///     若将来真能同场叠两张（一敲一未敲），这里**后者覆盖前者** —— 记 Warn，不静默。</para>
-    ///
-    ///     <para>★ 边界显式：百分点非法 ⇒ 记 Warn 并拒绝写入（保持默认），绝不静默接受。
-    ///     这里**不再**做"比例 ↔ 百分点互校" —— 数值只有本类这一份定义，
-    ///     结构上已不存在"两处各写一份导致脱钩"的可能，那道自校没有对象了。</para>
+    ///     打出【栖途】时施加的层数 —— <b>只用于把那枚 Power 挂到玩家身上</b>（引擎不接受 0 层的施加：
+    ///     <c>PowerCmd.Apply</c> 在 <c>amount == 0</c> 时直接 return，实据 <c>PowerCmd.cs:107</c>）
+    ///     ⇒ <c>Amount</c> 的起点是 1，真正的"触发次数"要把它减掉（见 <see cref="Triggers" />）。
+    ///     ★ 卡牌侧**引用**本常量（不另写一份），两边不可能漂移。
     /// </summary>
-    /// <param name="percent">未敲 / 敲后的百分点（只接受 <see cref="BasePercent" /> 或 <see cref="UpgradedPercent" />）。</param>
-    internal void SetRatio(int percent)
-    {
-        if (percent != BasePercent && percent != UpgradedPercent)
-        {
-            OrcaLog.Warn($"[Orca] 栖途：收到非法的转化百分点 {percent}（合法值只有 {BasePercent} / {UpgradedPercent}）"
-                       + $" ⇒ 本实例仍按 {PercentFromRatio(_ratio)}% 结算");
-            return;
-        }
+    internal const int InitialStacks = 1;
 
-        _ratio = RatioFromPercent(percent);
-        OrcaLog.Info($"[Orca] 栖途：本实例转化比例已按本局卡牌状态写入 = {PercentFromRatio(_ratio)}%"
-                   + $"（本局{(percent == UpgradedPercent ? "**已敲**" : "**未敲**")}；仅作用于本实例，无跨局静态状态）");
-    }
+    // ★ 2026-10-07：`_ratio` / `Ratio` / `RatioFromPercent` / `PercentFromRatio` / `SetRatio`
+    //   全部随旧口径（"战后把 25% / 50% 的**临时生命上限**转成真实上限"）一并删除 ——
+    //   新口径里根本没有"比例"这个量：敲后改的是**费用**（3 → 2 费），
+    //   换算只剩"累计发放的【再生】层数 × 每层价值（MaxHpPerRegen）"一条乘法（见 AfterCombatEnd）。
 
     public override PowerType Type => PowerType.Buff;
 
-    public override PowerStackType StackType => PowerStackType.None;
+    /// <summary>
+    ///     ★ 可叠层：<c>Amount</c> = <see cref="InitialStacks" />（打出时那 1 层）+ 本场触发次数
+    ///     ⇒ 每次触发发 <see cref="RegenPerTrigger" /> 层【再生】。
+    ///     图标上的数字走 <see cref="DisplayAmount" />（= <see cref="Triggers" />，扣掉起点那 1 层），
+    ///     玩家看到的就是"战后能换到多少点生命上限"。
+    /// </summary>
+    public override PowerStackType StackType => PowerStackType.Counter;
+
+    /// <summary>
+    ///     本场【栖途】的**真实触发次数**（= 累计发放的【再生】层数 / <see cref="RegenPerTrigger" />）。
+    ///     <para>★ 单一来源：战斗结束的换算与图标数字都读它，别处不要再各减一次。</para>
+    /// </summary>
+    internal int Triggers => Math.Max(0, (int)Amount - InitialStacks);
+
+    /// <summary>图标上显示的数字 = 触发次数（而不是含起点 1 层的 <c>Amount</c>）。</summary>
+    public override int DisplayAmount => Triggers;
+
+    /// <summary>
+    ///     ★★ <b>【银龙血统】刚刚为"掉血"触发了一次</b> —— 由遗物 <see cref="OrcaBloodline" />
+    ///     在"当前生命下降"钩子里调用（只有那里知道这一下掉血是不是敌人打的）。
+    ///
+    ///     <para>权威 L46：<i>"在没有受到敌人伤害（烧血自残不算）的情况下触发【银龙血统】时，
+    ///     获得1层再生"</i> ⇒ <paramref name="fromEnemy" /> 为真（这次掉血来自敌人）时**不发**；
+    ///     自残（卖血）触发时发 <see cref="RegenPerTrigger" /> 层。</para>
+    ///
+    ///     <para>★ <b>为什么用 <c>ThrowingPlayerChoiceContext</c></b>：遗物的
+    ///     <c>AfterCurrentHpChanged(Creature, decimal)</c> 签名里**没有** choice context，
+    ///     而施加 Power 必须走 <c>PowerCmd.Apply</c>。引擎自己的同类场景就是这么写的
+    ///     （实据：<c>PowerCmd.Decrement</c> 内部就是 <c>new ThrowingPlayerChoiceContext()</c>，
+    ///     <c>PowerCmd.cs:185-188</c>）—— 这条路径上不可能发生玩家选择，所以"抛异常的上下文"是安全的。</para>
+    /// </summary>
+    /// <param name="me">奥卡的生物（= 本 Power 的 Owner）。</param>
+    /// <param name="fromEnemy">这一下掉血是否由敌人造成（自残 = <c>false</c>）。</param>
+    /// <param name="lost">这一下掉的血量（仅用于日志）。</param>
+    internal async Task NoteBloodlineTrigger(Creature me, bool fromEnemy, int lost)
+    {
+        try
+        {
+            if (fromEnemy)
+            {
+                OrcaLog.Info($"[Orca] 栖途：这次【银龙血统】是**敌人打的**（掉血 {lost}）"
+                           + " ⇒ 不发【再生】（权威：在没有受到敌人伤害、烧血自残不算，的情况下才发）", 2);
+                return;
+            }
+
+            var ctx = new ThrowingPlayerChoiceContext();
+            await PowerCmd.Apply<OrcaHomesteadPower>(ctx, me, RegenPerTrigger, me, null);
+            await PowerCmd.Apply<RegenPower>(ctx, me, RegenPerTrigger, me, null);
+
+            OrcaLog.Info($"[Orca] 栖途：自残触发【银龙血统】（掉血 {lost}）⇒ +{RegenPerTrigger} 层【再生】"
+                       + $"（本场累计触发 {Triggers} 次 ⇒ 战后可转化 {Triggers * MaxHpPerRegen} 点生命上限）", 2);
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 栖途·发放【再生】出错（本次不发）：{ex.Message}", 2);
+        }
+    }
+
+    /// <summary>
+    ///     ★★ <b>浮窗里的两个数字由本类的常量注入</b>（A7 同一套路）：
+    ///     <c>PowerModel.HoverTips</c> 不调 <c>AddExtraArgsToDescription</c> ⇒ 占位符只能在
+    ///     <c>Description</c> 取值处补，否则 <c>powers.json</c> 里的 <c>{RegenPerTrigger}</c> /
+    ///     <c>{MaxHpPerRegen}</c> 会裸露成字面量。
+    ///     ★ 与卡面同源：两处都读本类的这两个常量（单一来源，改常量即两处同步）。
+    /// </summary>
+    public override LocString Description
+    {
+        get
+        {
+            var loc = base.Description;
+            try
+            {
+                var raw = loc.GetRawText();
+                if (raw.Contains("{RegenPerTrigger}"))
+                {
+                    loc.Add("RegenPerTrigger", (decimal)RegenPerTrigger);
+                }
+                if (raw.Contains("{MaxHpPerRegen}"))
+                {
+                    loc.Add("MaxHpPerRegen", (decimal)MaxHpPerRegen);
+                }
+            }
+            catch (Exception ex)
+            {
+                OrcaLog.Warn($"[Orca] 栖途：读取浮窗文案原文失败，占位符未注入：{ex.Message}");
+            }
+            return loc;
+        }
+    }
 
     public override async Task AfterCombatEnd(CombatRoom room)
     {
         try
         {
-            decimal pool = OrcaTempHp.Current;
-            int convert = (int)Math.Floor(pool * Ratio);
+            // ★★ 转化量 = 本场【栖途】**累计发放的【再生】层数**（= 本 Power 的 Amount）× 每层价值。
+            //    ⚠️ 口径说明（为什么不用"战斗结束那一刻身上还剩的【再生】层数"）：
+            //      引擎的 RegenPower 每个我方回合结束都会 Heal(Amount) 然后 Decrement 一层
+            //      （反编译实据 RegenPower.cs:20-27）⇒ 战斗结束时的"剩余层数"通常只剩 0~2，
+            //      按它转化会让这张先古牌的收益形同没有。权威原话是"根据再生层数转化为生命上限"，
+            //      用户 2026-10-07 的裁定是"1 层 = +1 生命上限"—— 取**累计发放层数**才与这句话、
+            //      以及"自残流的成长回报"这个定位一致。日志把两个数都打出来，便于实机核对口径。
+            int granted = Triggers * RegenPerTrigger;         // 累计发放层数 = 触发次数 × 每次层数
+            int regenStacksNow = (int)(Owner?.GetPower<RegenPower>()?.Amount ?? 0);
+            int convert = granted * MaxHpPerRegen;
             if (convert <= 0)
             {
-                OrcaLog.Info($"[Orca] 栖途：本场临时生命上限 {pool}，不足 1 点可转化", 2);
+                OrcaLog.Info("[Orca] 栖途：本场一次都没触发过（累计发放 0 层【再生】）⇒ 不转化", 2);
                 return;
             }
 
-            decimal used = OrcaTempHp.Consume(convert);      // ★ 先出池，免得被遗物一起还原掉
             var me = Owner;
-            if (me != null && used > 0)
+            if (me != null)
             {
-                await CreatureCmd.GainMaxHp(me, used);        // 真实上限（会顺带回血，符合"转化"语义）
+                await CreatureCmd.GainMaxHp(me, convert);     // 真实上限（会顺带回血，符合"转化"语义）
 
                 // ★★ 与击杀奖励（龙剑/魔剑）同理：谁赚到**真实**上限，谁就把本场基准一起推进。
                 //    本 Power 的 AfterCombatEnd 由引擎排在银龙血统**之前**（实据见类摘要），
                 //    所以这里是"先转化、后收尾"：若不抬基准，遗物收尾那次绝对写回会按
-                //    「基准 + 池子余量」重算 ⇒ 转化量被**多算一倍** ⇒ 战斗结束跳出 2×used。
+                //    「基准 + 池子余量」重算 ⇒ 转化量被**多算一倍** ⇒ 战斗结束跳出 2×convert。
                 //    抬基准之后：上限 = 新基准 + 池子余量，两边同时含这笔，幂等。
                 //    拿不到遗物（理论上不该发生：银龙血统是奥卡的起始遗物）⇒ 记 Error + 上限照旧，不静默吞。
                 //    ⚠️ 必须经 `Creature.Player` 才能拿到遗物：`PowerModel.Owner` 是 **Creature**（不是 Player），
@@ -597,19 +737,17 @@ public sealed class OrcaHomesteadPower : PowerModel
                 var bloodline = Owner?.Player?.GetRelic<OrcaBloodline>();
                 if (bloodline != null)
                 {
-                    bloodline.AdvanceCombatBase(used);
+                    bloodline.AdvanceCombatBase(convert);
                 }
                 else
                 {
-                    OrcaLog.Error($"[Orca] 栖途：{used} 点已转为真实生命上限，"
+                    OrcaLog.Error($"[Orca] 栖途：{convert} 点已转为真实生命上限，"
                                 + "但**身上没有银龙血统** ⇒ 无法并进本场基准（收尾可能把这笔再加一次）");
                 }
 
-                // ⚠️ 这里刻意**不用** `{Ratio:P0}` 那种"格式化成百分比"的写法：中文/日文 locale 下
-                //    `P` 格式串会带上本地化的百分号与不换行空格，日志里对不上卡面的"25 / 50"。
-                //    改走与卡面同一个整数口径（PercentFromRatio），日志与卡面必然同源。
-                OrcaLog.Info($"[Orca] 栖途：战斗结束 ⇒ 临时生命上限 {pool} 的 {PercentFromRatio(Ratio)}%"
-                         + $"，共 {used} 点转化为**真实生命上限**（当前上限 {me.MaxHp}）", 2);
+                OrcaLog.Info($"[Orca] 栖途：战斗结束 ⇒ 本场累计发放【再生】{granted} 层 × 每层 {MaxHpPerRegen} 点"
+                         + $" = 共 {convert} 点转化为**真实生命上限**（当前上限 {me.MaxHp}）"
+                         + $"；身上此刻还剩【再生】{regenStacksNow} 层（引擎每回合会衰减 1 层，故不作为换算依据）", 2);
             }
         }
         catch (Exception ex)

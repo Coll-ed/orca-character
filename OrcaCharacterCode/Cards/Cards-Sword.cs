@@ -101,31 +101,37 @@ public sealed class OrcaBloodScabbard : OrcaCard
 }
 
 /// <summary>
-///     ★ 红莲淬（1 费 · 魔剑 · **能力牌 Power** · 金卡 Rare；敲后追加**固有**）。
+///     ★ 红莲淬（1 费 · **龙剑** · **技能牌 Skill** · 金卡 Rare · 消耗；敲后**去掉消耗**）。
 ///
-///     <para>⚠️⚠️ <b>2026-10-04：本卡与权威口径不符，当前是【空卡】，待实现。</b></para>
+///     <para>⚠️⚠️ <b>2026-10-04：本卡与权威口径不符，当前是【空卡】，待实现。</b>
+///     ★ 2026-10-07：两条效果都已落地（见下方 <c>OnPlay</c>），本条警示随之关闭。</para>
 ///
-///     <para><b>权威口径</b>（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c>）：
-///     <i>"红莲淬 / 1费，无色，技能牌，金卡，消耗，敲后去消耗 /
-///     将当前场上所有存在的【焚烧】立刻无消耗触发一次"</i></para>
+///     <para><b>权威口径</b>（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L19-21，2026-10-07 改版）：
+///     <i>"红莲淬 / 1费，龙剑，技能牌，金卡，消耗，敲后去消耗 /
+///     将当前场上所有存在的【焚烧】立刻无消耗触发一次（回合结束方式结算），
+///     并且将敌人损失的生命附加到龙剑/魔剑伤害中"</i></para>
 ///
 ///     <para><b>旧实现</b>（本文件下面那个 <c>OrcaCrimsonTemperPower</c>，已按用户裁定"彻底断开"拆除）：
 ///     挂一个 Power，每次**消耗卡牌**累加一档，倍率 <c>1 + 0.1 × 档数</c>，由【嗜血魔剑】结算时读取并清零。
 ///     用户原话：<i>"红莲强化魔剑都是很久之前的初版"</i> ⇒ 该联动已从魔剑侧删除，
 ///     本 Power 的倍率机制随之**没有任何消费者**，故一并拆除。</para>
 ///
-///     <para>⇒ <b>待实现</b>：遍历战斗中所有生物的 <see cref="OrcaBurnPower" />，
-///     各**无消耗地触发一次**其回合结束伤害（即不扣层数地结算一次焚烧）。
-///     注意权威还写了「无色」「消耗」「敲后去消耗」三个词条 —— 现在这三点也没实现。</para>
+///     <para>⇒ <b>已实现（2026-10-07）</b>：① 遍历战斗中所有生物的 <see cref="OrcaBurnPower" />，
+///     各**无消耗地触发一次**其回合结束伤害（不扣层数地结算一次焚烧，走
+///     <c>OrcaBurnPower.TriggerAllNow</c>，与回合结束**同一段**逻辑）；
+///     ② 把这一趟里**敌人实际损失的生命**全额加到**当前携带的那把剑**上
+///     （<see cref="OrcaSwordBonus.Add" />，龙剑 / 魔剑都算）。
+///     「消耗」「敲后去消耗」「龙剑体系」三个词条也已对齐。</para>
 /// </summary>
 public sealed class OrcaCrimsonTemper : OrcaCard
 {
     /// <summary>
     ///     权威口径：「**无色**」。⚠️ 本模组里的"无色"**不是**原版的无色杂卡 ——
     ///     见 <c>work/奥卡卡包集/备注.txt</c>：<i>"里面的无色不是指原版的无色杂卡，而是指不会改变形态的卡牌"</i>
-    ///     ⇒ 形态标签为 <see cref="OrcaOrbForm.None" />（打出时能量球不切形态）。
+    ///     ★★ 2026-10-07 权威改版：体系从「无色」改成「**龙剑**」（卡牌说明1.txt L20）
+    ///     ⇒ 形态标签 <see cref="OrcaOrbForm.Sword" />（打出时能量球切成剑形态）。
     /// </summary>
-    public override OrcaOrbForm OrbForm => OrcaOrbForm.None;
+    public override OrcaOrbForm OrbForm => OrcaOrbForm.Sword;
 
     /// <summary>
     ///     权威口径：「**消耗**，敲后去消耗」。
@@ -148,12 +154,29 @@ public sealed class OrcaCrimsonTemper : OrcaCard
 
     protected override async Task OnPlay(PlayerChoiceContext ctx, CardPlay play)
     {
-        // ★ 权威效果：「将当前场上所有存在的【焚烧】立刻无消耗触发一次」
+        // ★ 效果①（旧权威就有）：「将当前场上所有存在的【焚烧】立刻无消耗触发一次（回合结束方式结算）」
         //   实现走 OrcaBurnPower.TriggerAllNow —— 与回合结束的结算**共用同一段伤害逻辑**
-        //   （单一来源），只差"是否扣层"一个参数。
-        int n = await OrcaBurnPower.TriggerAllNow(ctx);
-        if (n == 0)
+        //   （单一来源），只差"是否扣层"一个参数；返回值里同时带回"敌人实际损失的生命"。
+        var (bursts, enemyHpLost) = await OrcaBurnPower.TriggerAllNow(ctx);
+        if (bursts == 0)
+        {
             OrcaLog.Info("[Orca] 红莲淬：场上没有任何【焚烧】⇒ 本次无效果", 2);
+            return;
+        }
+
+        // ★ 效果②（2026-10-07 新增，权威 卡牌说明1.txt L21）：
+        //   「并且将敌人损失的生命附加到龙剑/魔剑伤害中」
+        //   —— 用户 2026-10-07 裁定：**全额 100%**、加到你**当前携带的那把剑**（龙剑 / 魔剑），
+        //      本场战斗**一直留着**（不设期限、不递减）。
+        if (enemyHpLost <= 0)
+        {
+            OrcaLog.Info("[Orca] 红莲淬：本次焚烧没有让敌人掉血（全被格挡/护盾吃掉）⇒ 剑上没有附加", 2);
+            return;
+        }
+
+        var hits = OrcaSwordBonus.Add(Owner, enemyHpLost, OrcaSwordBonus.OrcaSwordPick.Both);
+        OrcaLog.Info($"[Orca] 红莲淬：敌人实际损失生命 {enemyHpLost} ⇒ 全额附加到剑上"
+                   + $"（{OrcaSwordBonus.Describe(hits, OrcaSwordBonus.OrcaSwordPick.Both)}）", 2);
     }
 
     /// <summary>敲后**去掉【消耗】**（权威：「敲后去消耗」）。</summary>

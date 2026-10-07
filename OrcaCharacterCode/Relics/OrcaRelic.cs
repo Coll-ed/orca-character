@@ -86,6 +86,24 @@ public sealed class OrcaBloodline : RelicModel
     /// </summary>
     private bool _applying;
 
+    /// <summary>
+    ///     ★★ <b>2026-10-07 新增：这一下掉血是不是"敌人打的"</b> —— 只给【栖途】的触发判定用
+    ///     （权威 卡牌说明2.txt L46：「在没有受到敌人伤害（烧血自残不算）的情况下触发【银龙血统】时，
+    ///     获得1层再生」）。
+    ///
+    ///     <para>为什么不能在 <see cref="AfterCurrentHpChanged" /> 里判：那个钩子的签名只有
+    ///     <c>(Creature, decimal)</c>，<b>看不见伤害来源</b>（这也正是 ① 必须含自残、而 ② 只能改用
+    ///     <see cref="AfterDamageReceived" /> 判"被敌人打"的原因）。而
+    ///     <c>ModifyHpLostAfterOsty(target, amount, props, dealer, cardSource)</c> 的签名里
+    ///     <b>带 dealer</b>，且在"扣血"**之前**被调用 ⇒ 在那里打标、在生命变化钩子里消费。</para>
+    ///
+    ///     <para>⚠️ <b>必须清零，否则会串味</b>：被完全格挡时生命不变 ⇒ <c>AfterCurrentHpChanged</c>
+    ///     根本不触发，这个标记就会残留到下一次（可能是自残的）掉血上 ⇒ 把该发的【再生】判掉 ✗。
+    ///     所以 <see cref="AfterDamageReceived" /> 里**无条件**先清一次（那是"这一下伤害处理完了"的
+    ///     天然收尾点）。自残走 <c>SetCurrentHp</c>、绕过伤害管线 ⇒ 天然不会打这个标 ✓。</para>
+    /// </summary>
+    private bool _enemyHitInFlight;
+
     public override RelicRarity Rarity => (RelicRarity)1;   // Starter
 
     /// <summary>基名（别处若按基名找图就用它）。</summary>
@@ -99,6 +117,35 @@ public sealed class OrcaBloodline : RelicModel
 
     /// <summary>轮廓图（不可用状态）＝ 同一张，后续有专门轮廓图再换。</summary>
     protected override string PackedIconOutlinePath => ImageHelper.GetImagePath("relics/orca_horn.png");
+
+    /// <summary>
+    ///     ★★ <b>掉血来源打标</b>（2026-10-07 新增）：伤害管线在"扣血之前"调这里，而且**签名带 dealer**
+    ///     ⇒ 这是唯一能标出"这一下是敌人打的"的位置（反编译实据：
+    ///     <c>AbstractModel.ModifyHpLostAfterOsty(Creature target, decimal amount, ValueProp props,
+    ///     Creature? dealer, CardModel? cardSource)</c>）。自残走 <c>SetCurrentHp</c> ⇒ 绕过伤害管线，
+    ///     天然不会打标 ✓（与 ① 的既有口径一致）。</para>
+    ///
+    ///     <para>★ 这是个**纯函数**（返回值就是放行的掉血量），绝不能在里面 await ——
+    ///     只打一个 bool 标记，与浴血涅槃的 <c>_pending</c> 打标是同一套做法。</para>
+    /// </summary>
+    public override decimal ModifyHpLostAfterOsty(
+        Creature target, decimal amount, ValueProp props, Creature? dealer, CardModel? cardSource)
+    {
+        try
+        {
+            var me = Owner?.Creature;
+            if (me != null && target == me && amount > 0 && dealer != null && dealer != me)
+            {
+                _enemyHitInFlight = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            // 不静默吞：打标失败只会让【栖途】少发一次【再生】（偏保守），但根因必须可查。
+            OrcaLog.Warn($"[Orca] 银龙血统·掉血来源打标出错（本次按非敌人伤害处理）：{ex.Message}", 2);
+        }
+        return amount;
+    }
 
     /// <summary>
     ///     ① 只要**当前生命下降**就触发（用户口径："受到伤害就会触发遗物，**包括自残的**"）。
@@ -134,6 +181,11 @@ public sealed class OrcaBloodline : RelicModel
             int lost = (int)Math.Floor(-delta);
             if (lost <= 0) return;                  // 治疗（正值）不触发；日志不再逐次刷屏（审查：降噪）
 
+            // ★★ 2026-10-07：这一下掉血是不是**敌人打的** —— 由 ModifyHpLostAfterOsty 打标，
+            //    在这里**读完即清**（消费掉，免得串到下一次掉血上）——【栖途】的触发判定要用它。
+            bool fromEnemy = _enemyHitInFlight;
+            _enemyHitInFlight = false;
+
             // ★★ 2026-09-23：这里**不再**置 `_damagedThisTurn`。
             //    ①（受伤 → 本场临时上限）必须**含自残** —— 用户口径：
             //      "受到伤害就会触发遗物，包括自残的"、"卖血就是在本场战斗内获得临时生命上限而启动"
@@ -166,6 +218,17 @@ public sealed class OrcaBloodline : RelicModel
             OrcaSpeech.SayCapped(me, VfxDuration.Short, "hurt", 2,
                 "ORCA.banter.hurt.1", "ORCA.banter.hurt.2", "ORCA.banter.hurt.3",
                 "ORCA.banter.hurt.4", "ORCA.banter.hurt.5", "ORCA.banter.hurt.6");
+
+            // ★★ 2026-10-07【栖途】联动（权威 卡牌说明2.txt L46）：
+            //    "在没有受到敌人伤害（烧血自残不算）的情况下触发【银龙血统】时，获得1层再生"
+            //    ⇒ 挂点选在"这一次血统**真的**触发了"之后（applied > 0 的这一支里）——
+            //      与账本记账用同一个判据，不另立标准；敌人打的那一下由 fromEnemy 判掉。
+            //    ⚠️ 玩家身上没【栖途】时 GetPower 返回 null ⇒ 什么都不做（正常路径，不打日志）。
+            var homestead = me.GetPower<OrcaHomesteadPower>();
+            if (homestead != null)
+            {
+                await homestead.NoteBloodlineTrigger(me, fromEnemy, lost);
+            }
         }
         catch (Exception ex)
         {
@@ -191,6 +254,11 @@ public sealed class OrcaBloodline : RelicModel
     {
         try
         {
+            // ★★ 2026-10-07：这一下伤害处理完了 ⇒ **无条件**清掉落血来源标记（理由见 _enemyHitInFlight）。
+            //    必须放在下面任何 return 之前 —— 被完全格挡时生命不变、AfterCurrentHpChanged 不会触发，
+            //    少了这一清，标记会残留到下一次自残上，把该发的【再生】判掉 ✗。
+            _enemyHitInFlight = false;
+
             var me = Owner?.Creature;
             if (me == null || target != me) return Task.CompletedTask;
             if (dealer != null && dealer == me) return Task.CompletedTask;   // 自己打自己 ≠ 被敌人打

@@ -32,8 +32,16 @@ namespace OrcaCharacter;
 ///     ⇒ 只要本地玩家身上有归墟，**任何生物**（玩家 / 敌人 / 队友）的治疗都被拦下。
 ///     这正是卡面写的"场上所有角色无法回复生命"。</para>
 ///
+///     <para>★★ <b>2026-10-07 权威改版两处</b>（<c>work/奥卡卡包集/卡牌包2/卡牌说明2.txt</c> L52-54）：
+///     <list type="number">
+///       <item><b>转入对象是【嗜血魔剑】</b>（权威逐字「转入<b>魔剑</b>的附加伤害」）—— 改前加的是
+///         【嗜血龙剑】，与权威不符；加附加的唯一入口 = <see cref="OrcaSwordBonus.Add" />；</item>
+///       <item><b>不拦截吸血</b>：吸血那一路必须照常回血 ⇒ 进 <see cref="OrcaLifestealHeal" /> 闸门
+///         （由吸血结算 / 魔剑单敌自愈两处标注），本 Prefix 直接放行。</item>
+///     </list></para>
+///
 ///     <para>⚠️ 反向兜底仍然保留 <see cref="OrcaVoidReturnPower.AfterCurrentHpChanged" />：
-///     万一有治疗绕过了 <c>CreatureCmd.Heal</c>，那条老路径还能补上。</para>
+///     万一有治疗绕过了 <c>CreatureCmd.Heal</c>，那条老路径还能补上（它同样会放行吸血闸门）。</para>
 /// </summary>
 [HarmonyPatch(typeof(CreatureCmd), "Heal")]
 internal static class OrcaVoidReturnBlockPatch
@@ -47,6 +55,16 @@ internal static class OrcaVoidReturnBlockPatch
             var power = ActiveOnLocalPlayer();
             if (power == null) return;
 
+            // ★★ 权威 2026-10-07（卡牌说明2.txt L54）：「**不拦截吸血**」
+            //    ⇒ 吸血那一路的回血照常放行。闸门由 OrcaLifestealHeal 标注，
+            //      两个生产端（吸血结算 / 魔剑单敌自愈）见其类摘要。
+            if (OrcaLifestealHeal.InFlight)
+            {
+                OrcaLog.Info($"[Orca] 归墟：{creature.Name} 的 {amount} 点回复来自【吸血】"
+                           + " ⇒ 按权威**放行**（不拦截吸血）", 2);
+                return;
+            }
+
             decimal blocked = amount;
             amount = 0m;                                   // ★ 真正拦下：血不会回上去
 
@@ -54,8 +72,12 @@ internal static class OrcaVoidReturnBlockPatch
             string tail;
             if (converted > 0)
             {
-                int now = AddToSwordBonus(converted);
-                tail = $"{converted} 点（{power.Ratio:P0}）转入【嗜血龙剑】附加伤害（当前 {now}）";
+                // ★ 2026-10-07 权威改版：转入对象是【嗜血魔剑】（权威逐字写「转入**魔剑**的附加伤害」），
+                //   不再是【嗜血龙剑】。加附加的唯一入口 = OrcaSwordBonus.Add（三处消费者共用）。
+                var pick = OrcaSwordBonus.OrcaSwordPick.BloodBlade;
+                var hits = OrcaSwordBonus.Add(LocalPlayer(), converted, pick);
+                tail = $"{converted} 点（{OrcaVoidReturnPower.PercentFromRatio(power.Ratio)}%）"
+                     + $"转入{OrcaSwordBonus.Describe(hits, pick)}";
             }
             else
             {
@@ -86,28 +108,33 @@ internal static class OrcaVoidReturnBlockPatch
             Player? me = LocalContext.GetMe(players);
             return me?.Creature?.GetPower<OrcaVoidReturnPower>();
         }
-        catch
+        catch (Exception ex)
         {
+            // ★ 2026-10-07：原来是裸 catch（静默吞）—— 与工程纪律「禁止静默吞异常」不符，补记录。
+            //   注意：这里**不改变行为**（仍然返回 null = 本次不拦治疗），只是让根因可查。
+            OrcaLog.Warn($"[Orca] 归墟：查本地玩家身上的归墟失败（本次不拦治疗）：{ex.Message}", 2);
             return null;
         }
     }
 
-    /// <summary>把转化量加到战斗中的【嗜血龙剑】上，返回加完后的累计附加。</summary>
-    internal static int AddToSwordBonus(int amount)
+    /// <summary>
+    ///     本地玩家（拿不到返回 null）。
+    ///     <para>取值路径与 <see cref="ActiveOnLocalPlayer" /> **同一套**（都已实机验证）：
+    ///     <c>RunManager.Instance.DebugOnlyGetState()</c>（纯取值）→ <c>RunState.Players</c>
+    ///     → <c>LocalContext.GetMe(IEnumerable&lt;Player&gt;)</c>。
+    ///     ★ 边界显式：异常记 Warn 后返回 null（不静默吞）。</para>
+    /// </summary>
+    internal static Player? LocalPlayer()
     {
         try
         {
             var players = RunManager.Instance?.DebugOnlyGetState()?.Players;
-            if (players == null) return 0;
-            Player? me = LocalContext.GetMe(players);
-            var sword = me?.PlayerCombatState?.AllCards?.OfType<OrcaBloodSword>().FirstOrDefault();
-            if (sword == null) return 0;
-            sword.AddBonus(amount);
-            return sword.Bonus;
+            return players == null ? null : LocalContext.GetMe(players);
         }
-        catch
+        catch (Exception ex)
         {
-            return 0;
+            OrcaLog.Warn($"[Orca] 归墟：取本地玩家失败（本次不加剑附加）：{ex.Message}", 2);
+            return null;
         }
     }
 }

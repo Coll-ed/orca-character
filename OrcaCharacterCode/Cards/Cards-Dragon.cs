@@ -197,8 +197,8 @@ public sealed class OrcaNirvanaGrasp : OrcaCard
 /// <summary>
 ///     ★ 践踏（1 费 · **无色（不变形态）** · **攻击牌** · 白卡 Common · 消耗；敲后**去掉消耗**）。
 ///
-///     <para>权威口径（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L37-39）：
-///     <i>"1费，无色，攻击牌，白卡，消耗，敲后去消耗 / 对所有敌人造成 **6** 点伤害，并附加 **2** 层【焚烧】"</i>。
+///     <para>权威口径（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L38-40，2026-10-07 改版；改版前为 6 点伤害）：
+///     <i>"1费，无色，攻击牌，白卡，消耗，敲后去消耗 / 对所有敌人造成 **10** 点伤害，并附加 **2** 层【焚烧】"</i>。
 ///     ⚠️ 「无色」按 <c>work/奥卡卡包集/备注.txt</c> L1 = <b>不会改变形态的卡牌</b> ⇒ <see cref="OrcaOrbForm.None" />。</para>
 ///
 ///     <para>★ 这是本批**两张攻击牌之一** —— 商店固定要 2 张 Attack，
@@ -212,7 +212,7 @@ public sealed class OrcaTrample : OrcaCard
     public OrcaTrample() : base(1, (CardType)1, (CardRarity)2, (TargetType)3) { }   // 1 费 · Attack · Common · AllEnemies　（按卡牌说明1.txt：白卡）
 
     /// <summary>践踏的伤害值。</summary>
-    private const decimal TrampleDamage = 6m;   // 权威：6 点（卡牌说明1.txt L39「对所有敌人造成6点伤害」）
+    private const decimal TrampleDamage = 10m;  // 权威：10 点（卡牌说明1.txt L40「对所有敌人造成10点伤害」，2026-10-07 由 6 上调）
 
     protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new DamageVar(TrampleDamage, (ValueProp)8) };
 

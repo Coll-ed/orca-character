@@ -140,24 +140,25 @@ public sealed class OrcaCodexEmber : OrcaCard
 /// <summary>
 ///     ★ 逐焰（1 费 · **无色（不变形态）** · **攻击牌** · 白卡 Common）。
 ///
-///     <para>权威口径（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L41-43）：
-///     <i>"1费，无色，攻击牌，白卡，敲后8点伤害5层焚烧效果 /
-///     对一名敌人造成 **5** 点伤害并挂上 **2** 层【焚烧】效果"</i>。
+///     <para>权威口径（<c>work/奥卡卡包集/卡牌包1/卡牌说明1.txt</c> L42-44，2026-10-07 改版）：
+///     <i>"1费，无色，攻击牌，白卡，敲后10点伤害5层焚烧效果 /
+///     对一名敌人造成 **6** 点伤害并挂上 **3** 层【焚烧】效果"</i>。
+///     （改版前是 5 点伤害 / 2 层、敲后 8 点伤害 —— 用户口径「有些卡牌太弱了」⇒ 本轮加档。）
 ///     ⚠️ 「无色」按 <c>work/奥卡卡包集/备注.txt</c> L1 = <b>不会改变形态的卡牌</b> ⇒ <see cref="OrcaOrbForm.None" />。</para>
 ///
 ///     <para>「焚烧」= <see cref="OrcaBurnPower" />（敌方回合结束时炸开，波及其它带焚烧的敌人）。</para>
 /// </summary>
 public sealed class OrcaEmberChase : OrcaCard
 {
-    /// <summary>焚烧层数：2 → 敲后 5。</summary>
-    private int _burn = 2;
+    /// <summary>焚烧层数：3 → 敲后 5（权威 L43-44：基础 3 层 / 敲后 5 层）。</summary>
+    private int _burn = 3;
 
     /// <summary>★ 无色 = **不改变**能量球形态（权威 L42「无色」；定义见 备注.txt L1）。</summary>
     public override OrcaOrbForm OrbForm => OrcaOrbForm.None;
 
     public OrcaEmberChase() : base(1, (CardType)1, (CardRarity)2, (TargetType)2) { }   // 1 费 · Attack · Common · AnyEnemy
 
-    protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new DamageVar(5m, (ValueProp)8) };
+    protected override IEnumerable<DynamicVar> CanonicalVars => new[] { new DamageVar(6m, (ValueProp)8) };
 
     /// <summary>
     ///     ★ 用户反馈：「逐焰敲后卡面升级错了，卡面是 2 焚烧 + 10 伤害，实际打出效果与我们写得一致」
@@ -188,10 +189,10 @@ public sealed class OrcaEmberChase : OrcaCard
         Log.Info($"[Orca] 逐焰：对 {target.Name} 造成 {DynamicVars.Damage.BaseValue} 点伤害 + {_burn} 层焚烧", 2);
     }
 
-    /// <summary>敲后：伤害 +3、焚烧 2 → 5 层。</summary>
+    /// <summary>敲后：伤害 +4（6 → 10）、焚烧 3 → 5 层（权威 L44「敲后10点伤害5层焚烧效果」）。</summary>
     protected override void OnUpgrade()
     {
-        DynamicVars.Damage.UpgradeValueBy(3m);
+        DynamicVars.Damage.UpgradeValueBy(4m);
         _burn = 5;
     }
 }
