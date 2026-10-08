@@ -83,6 +83,15 @@ public abstract class OrcaCard : CardModel
     }
 
     /// <summary>
+    ///     **只看不消费**地读魔典标记 —— 给"只想记一条日志 / 只想知道这次是不是魔典给的"用。
+    ///
+    ///     <para>判据本身（这次是不是狂躁那一趟）只能走 <see cref="ConsumeViaCodex" />，
+    ///     由 <c>OrcaFrenzyCard.IsFrenzyPlay</c> 独占消费：**一次 OnPlay 只能消费一次**，
+    ///     否则第二次读一定是 false（嗜血魔剑原先就是这么错的）。</para>
+    /// </summary>
+    internal bool IsViaCodex => _viaCodex;
+
+    /// <summary>
     ///     每张牌打出后的统一收尾：先说台词，再转交基类实现。
     ///
     ///     <para>台词分两句：按**牌型**说一句（给格挡的技能牌走另一句），再按**牌 id** 说专属台词。

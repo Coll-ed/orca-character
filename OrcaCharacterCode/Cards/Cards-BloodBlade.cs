@@ -172,8 +172,11 @@ public sealed class OrcaBloodBlade : OrcaFrenzyCard
     {
         // ══════════ 狂躁（回合结束自动打出 / 被召唤出来直接打出）⇒ 全体敌人伤害 ══════════
         // ★ 用基类的 IsFrenzyPlay（与龙剑同一套判据）：它会**消费**魔典标记，所以只调一次。
+        // ★ 顺序是硬的：先"只看不消费"读出魔典标记，再交给基类的 IsFrenzyPlay（它才消费标记）。
+        //   原本是先 IsFrenzyPlay 再 ConsumeViaCodex() ⇒ 标记已被消费，第二次读必然 false，
+        //   下面那句"本次由**龙族魔典**打出"的日志**永远打不出来**（标记链上唯一的确定性缺陷）。
+        bool viaCodex = IsViaCodex;
         bool isFrenzy = IsFrenzyPlay(play);
-        bool viaCodex = ConsumeViaCodex();
         if (isFrenzy)
         {
             await OnFrenzyPlay(ctx, play);
