@@ -213,6 +213,12 @@ internal static class OrcaMerchantSkinPatch
     {
         try
         {
+            // ★★ 2026-10-08 修「战士的商店变成奥卡」：换肤必须过**本地玩家是奥卡**这道闸门。
+            //    原先这里无条件换骨架 ⇒ 玩别的角色进商店也会被换成奥卡（用户实机实报）。
+            //    守卫复用已验证过的同一判定（OrcaAudio.LocalPlayerIsOrca，与音效替换同一条取值路径）。
+            //    ⚠️ 不是奥卡时**直接 return、不打任何日志** —— 别人的局里不该出现我们的行。
+            if (!OrcaAudio.LocalPlayerIsOrca()) return;
+
             var n = OrcaSceneSkin.Apply(__instance, OrcaSkin.MerchantSkeleton,
                                         OrcaSceneSkin.MerchantIdleAnimation, "商店外观");
             if (n > 0) OrcaLog.Info($"[Orca] 商店外观已套皮肤 → {OrcaSkin.Active}（{n} 个 SpineSprite）", 2);
@@ -256,6 +262,9 @@ internal static class OrcaRestSiteSkinPatch
         try
         {
             var act = __instance.Player?.RunState?.CurrentActIndex ?? 0;
+            // ★★ 2026-10-08 修「战士的火堆变成奥卡」：与商店同因 —— 换肤前先过闸门。
+            if (!OrcaAudio.LocalPlayerIsOrca()) return;
+
             var applied = OrcaSceneSkin.Apply(__instance, OrcaSkin.RestSkeleton,
                                               OrcaSceneSkin.ActIdleAnimation(act), "篝火外观");
             if (applied > 0)
@@ -279,6 +288,9 @@ internal static class OrcaRestSiteSkinPatch
         try
         {
             if (!GodotObject.IsInstanceValid(node)) return;
+
+            // ★★ 2026-10-08：延迟重试这条同样要过闸门（否则它会在别人的局里把骨架换掉）。
+            if (!OrcaAudio.LocalPlayerIsOrca()) return;
 
             var applied = OrcaSceneSkin.Apply(node, OrcaSkin.RestSkeleton,
                                               OrcaSceneSkin.ActIdleAnimation(act), "篝火外观(延迟)");
