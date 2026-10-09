@@ -121,6 +121,10 @@ internal static class OrcaSceneSkin
 
             mega.SetSkeletonDataRes(new MegaSkeletonDataResource(res));
 
+            // ★ 换完骨架立刻套上「黑纱透明度」（见 OrcaVeilTuner）：换骨架会把槽位颜色重置，
+            //   所以每次套皮都要重新写一遍；板甲骨架没有那几个件 ⇒ 命中 0 属正常。
+            OrcaVeilTuner.TrackAndApply(sprite);
+
             // ★★ 2026-10-04 修：换完骨架**必须用运行时的动画状态 API 重新驱动**。
             //    两个坑都踩过：
             //      ① 设 `preview_animation` 没用 —— 那是**编辑器预览属性**，运行时读的是动画状态；
@@ -193,8 +197,12 @@ internal static class OrcaSceneSkin
     ///     "角色节点直接挂 SpineSprite"的场景够用；但选人界面的大人物模型层级更深
     ///     （模型挂在 <c>_bgContainer</c> 下、中间还有包装节点）⇒ 浅查找会**一个都找不到**。
     ///     方法名与注释本来就写的是"这棵子树"，递归才是它本来的语义。</para>
+    ///
+    ///     <para>★ 2026-10-10 可见性放开到 <c>internal</c>：<see cref="OrcaVeilTuner" /> 也要按同一
+    ///     判据找 SpineSprite（面板里那个**预览小人**不经过 <see cref="Apply" />，只能靠遍历找），
+    ///     与其复制一份"怎么认 SpineSprite"的判据，不如共用这一处（单一来源）。</para>
     /// </summary>
-    private static IEnumerable<Node> FindSpineSprites(Node root)
+    internal static IEnumerable<Node> FindSpineSprites(Node root)
     {
         if (root.GetClass() == MegaSprite.spineClassName) yield return root;
 

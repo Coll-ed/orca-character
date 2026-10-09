@@ -66,9 +66,16 @@ internal static class OrcaSkinPanel
     /// <summary>左右箭头按钮的宽度（像素）。</summary>
     private const int ArrowWidth = 34;
 
+    /// <summary>「黑纱透明度」行的标签文字（控件做在主界面换人面板里，用户直接拧）。</summary>
+    private const string VeilLabelText = "纱透明度";
+
+    /// <summary>百分比数值标签的固定宽度（像素）——避免数值位数变化让箭头乱跳。</summary>
+    private const int VeilValueWidth = 46;
+
     private static PanelContainer? _panel;
     private static Label? _title;
     private static Control? _previewBox;
+    private static Label? _veilValue;
     private static Node? _previewSpine;
     private static string _previewSkinTag = string.Empty;
     private static bool _previewAnimStarted;
@@ -113,6 +120,15 @@ internal static class OrcaSkinPanel
             row.AddChild(_previewBox);
             row.AddChild(MakeArrow("》", +1));
 
+            // ── 黑纱透明度（婚纱专用；运行时按槽位调，不碰素材，见 OrcaVeilTuner）──
+            var veilRow = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
+            veilRow.AddChild(new Label { Text = VeilLabelText });
+            veilRow.AddChild(MakeVeilArrow("◀", -1));
+            _veilValue = new Label { Text = OrcaVeilTuner.Display, CustomMinimumSize = new Vector2(VeilValueWidth, 0) };
+            veilRow.AddChild(_veilValue);
+            veilRow.AddChild(MakeVeilArrow("▶", +1));
+            column.AddChild(veilRow);
+
             // 拖动：挂在面板自己身上（箭头按钮会先吃掉自己的点击）
             panel.GuiInput += @event => OnPanelGuiInput(@event, panel);
 
@@ -149,6 +165,49 @@ internal static class OrcaSkinPanel
         };
         button.Pressed += () => CycleSkin(direction);
         return button;
+    }
+
+    /// <summary>「纱透明度」的左右箭头：调一档 + 立刻重刷（含预览小人，所以松手就能看到）。</summary>
+    private static Button MakeVeilArrow(string text, int direction)
+    {
+        var button = new Button
+        {
+            Text = text,
+            CustomMinimumSize = new Vector2(ArrowWidth, 0),
+        };
+        button.Pressed += () => StepVeil(direction);
+        return button;
+    }
+
+    /// <summary>调一档黑纱透明度，并把数值写回面板标签。</summary>
+    private static void StepVeil(int direction)
+    {
+        try
+        {
+            OrcaVeilTuner.Step(direction);
+
+            // ★ 关键：预览小人**不经过 OrcaSceneSkin.Apply**，光靠"追踪表"刷不到它 ⇒
+            //   这里直接遍历当前选人界面这棵子树，把在场的 SpineSprite 全部重刷一遍。
+            var n = 0;
+            if (_screen != null && GodotObject.IsInstanceValid(_screen))
+            {
+                n += OrcaVeilTuner.ApplyToTree(_screen);
+            }
+            if (_previewSpine != null && GodotObject.IsInstanceValid(_previewSpine))
+            {
+                n += OrcaVeilTuner.ApplyToTree(_previewSpine);
+            }
+            OrcaLog.Info($"[Orca] 黑纱透明度 {OrcaVeilTuner.Display}：本次按场景重刷 {n} 个 SpineSprite", 2);
+
+            if (_veilValue != null && GodotObject.IsInstanceValid(_veilValue))
+            {
+                _veilValue.Text = OrcaVeilTuner.Display;
+            }
+        }
+        catch (Exception ex)
+        {
+            OrcaLog.Warn($"[Orca] 调节黑纱透明度失败：{ex.Message}", 2);
+        }
     }
 
     /// <summary>按当前选中的角色刷新面板：**只有奥卡**才显示；并同步标题/预览/小人。</summary>
